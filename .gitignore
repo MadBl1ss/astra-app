@@ -1,0 +1,35 @@
+# Build output
+/dist/
+/bin/
+*.exe
+*.dll
+node_modules/
+target/
+app/build/
+app/src-tauri/gen/
+
+# Dev data dir of the daemon (configs with real keys land here)
+/.dev/
+
+# Third-party engines are downloaded by scripts, never committed
+/engines/
+
+# Never commit a configured copy: these hold someone's subscription keys
+hwid.txt
+xray.json
+profile.json
+settings.json
+server-stats.json
+tray-settings.json
+cache.db
+*.log
+journal.jsonl
+config.bak.json
+config.before-*.json
+/core/**/run/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
