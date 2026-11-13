@@ -1,0 +1,184 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-direct"
+      },
+      {
+        "type": "https",
+        "tag": "dns-proxy",
+        "detour": "proxy",
+        "server": "1.1.1.1"
+      }
+    ],
+    "rules": [
+      {
+        "rule_set": "servers-dns",
+        "server": "dns-direct"
+      },
+      {
+        "rule_set": "direct-dns",
+        "server": "dns-direct"
+      },
+      {
+        "clash_mode": "Global",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": "vpn-dns",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": [
+          "itdog-inside",
+          "itdog-google-ai"
+        ],
+        "server": "dns-proxy"
+      }
+    ],
+    "final": "dns-direct",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "_strelka": "tun",
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "Strelka",
+      "mtu": 9000,
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    },
+    {
+      "_strelka": "local-proxy",
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 0
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [],
+      "default": "",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "_strelka": "xray",
+        "process_path_regex": [],
+        "outbound": "direct"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "_strelka": "local-proxy",
+        "inbound": "mixed-in",
+        "outbound": "proxy"
+      },
+      {
+        "rule_set": "direct",
+        "outbound": "direct"
+      },
+      {
+        "clash_mode": "Global",
+        "outbound": "proxy"
+      },
+      {
+        "rule_set": "vpn",
+        "outbound": "proxy"
+      },
+      {
+        "rule_set": [
+          "itdog-inside",
+          "itdog-google-ai"
+        ],
+        "outbound": "proxy"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "direct",
+        "path": "rules/direct.json"
+      },
+      {
+        "type": "local",
+        "tag": "direct-dns",
+        "path": "rules/direct-dns.json"
+      },
+      {
+        "type": "local",
+        "tag": "vpn",
+        "path": "rules/vpn.json"
+      },
+      {
+        "type": "local",
+        "tag": "vpn-dns",
+        "path": "rules/vpn-dns.json"
+      },
+      {
+        "type": "local",
+        "tag": "servers-dns",
+        "path": "rules/servers-dns.json"
+      },
+      {
+        "type": "remote",
+        "tag": "itdog-inside",
+        "format": "binary",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/russia_inside.srs",
+        "initial_path": "rules/itdog-inside.srs",
+        "update_interval": "1d"
+      },
+      {
+        "type": "remote",
+        "tag": "itdog-google-ai",
+        "format": "binary",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/google_ai.srs",
+        "initial_path": "rules/itdog-google-ai.srs",
+        "update_interval": "1d"
+      }
+    ],
+    "final": "direct",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "cache.db"
+    },
+    "clash_api": {
+      "external_controller": "",
+      "secret": "",
+      "default_mode": "Rule"
+    }
+  }
+}
