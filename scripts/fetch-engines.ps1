@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Copies the engines for development into engines\ (ignored by git).
 
