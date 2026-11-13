@@ -196,15 +196,19 @@ func DefaultSettings() Settings {
 
 // NewState is the document of a daemon that has done nothing yet.
 func NewState(version string) State {
+	settings := DefaultSettings()
 	return State{
-		Proto:     Version,
-		Version:   version,
-		VPN:       VPN{Desired: DesiredOff, Phase: PhaseOff, Mode: ModeRule},
-		Health:    Health{Verdict: VerdictSettling},
+		Proto:   Version,
+		Version: version,
+		VPN:     VPN{Desired: DesiredOff, Phase: PhaseOff, Mode: ModeRule},
+		Health:  Health{Verdict: VerdictSettling},
+		// guard.enabled and guard.allowLan repeat the settings; whether the
+		// filters are actually in place is "engaged".
+		Guard:     Guard{Enabled: settings.Guard, AllowLAN: settings.AllowLAN},
 		Servers:   []Server{},
 		Subs:      []Sub{},
 		Incidents: []Incident{},
-		Settings:  DefaultSettings(),
+		Settings:  settings,
 	}
 }
 

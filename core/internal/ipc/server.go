@@ -9,6 +9,8 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"strelka/proto"
 )
@@ -95,6 +97,24 @@ func (s *Server) Close() {
 	s.wg.Wait()
 }
 
+// Drain waits, up to limit, until every client's queue has been handed to
+// the OS. Called before Close so the last notifications are not cut off.
+func (s *Server) Drain(limit time.Duration) {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		pending := 0
+		s.mu.Lock()
+		for c := range s.conns {
+			pending += len(c.out) + int(c.writing.Load())
+		}
+		s.mu.Unlock()
+		if pending == 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *Server) isClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -148,6 +168,8 @@ type Conn struct {
 
 	mu     sync.Mutex
 	topics map[string]bool
+
+	writing atomic.Int32 // 1 while a message is between the queue and the OS
 }
 
 // Subscribe adds topics to what this client receives.
@@ -212,7 +234,10 @@ func (c *Conn) writeLoop() {
 		case <-c.done:
 			return
 		case line := <-c.out:
-			if _, err := c.nc.Write(line); err != nil {
+			c.writing.Store(1)
+			_, err := c.nc.Write(line)
+			c.writing.Store(0)
+			if err != nil {
 				c.Close()
 				return
 			}
