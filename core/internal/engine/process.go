@@ -73,7 +73,9 @@ func startProcess(l Launch, out *os.File) (*process, error) {
 func (p *process) exitCode() int {
 	var ee *exec.ExitError
 	if errors.As(p.waitErr, &ee) {
-		return ee.ExitCode()
+		// Windows exit codes are unsigned; a killed process reports
+		// 0xFFFFFFFF or an NTSTATUS, which read better as negatives.
+		return int(int32(ee.ExitCode()))
 	}
 	if p.waitErr != nil {
 		return -1

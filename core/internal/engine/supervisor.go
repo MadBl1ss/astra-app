@@ -56,6 +56,9 @@ type Event struct {
 	Crashes  int           // crashes inside the policy window, this one included
 	Tail     []string      // last lines of output, the usual place of the reason
 
+	// Stopped
+	Forced bool // the engine ignored the polite request, or could not be sent one
+
 	// Failed
 	Reason string // FailMissing | FailConfig | FailCrashLoop
 	Err    error
@@ -251,13 +254,13 @@ func (s *Supervisor) session() outcome {
 			s.line("strelkad: " + s.cfg.Name + " не запустился: " + err.Error())
 		}
 
-		out := outExited
+		out, forced := outExited, false
 		ev := Event{Kind: Exited, ExitCode: -1}
 		if p != nil {
 			s.setStatus(func(st *Status) { st.Running, st.PID, st.Since = true, p.pid, p.started })
 			s.emit(Event{Kind: Started, PID: p.pid, At: p.started})
 			var notReady bool
-			out, notReady = s.watch(p, ready)
+			out, notReady, forced = s.watch(p, ready)
 			ev.PID, ev.ExitCode, ev.NotReady = p.pid, p.exitCode(), notReady
 			ev.Uptime = time.Since(p.started)
 			s.setStatus(func(st *Status) { st.Running, st.PID, st.Since = false, 0, time.Time{} })
@@ -267,7 +270,7 @@ func (s *Supervisor) session() outcome {
 		case outClose:
 			return outClose
 		case outStop:
-			s.emit(Event{Kind: Stopped})
+			s.emit(Event{Kind: Stopped, PID: ev.PID, Forced: forced})
 			return outIdle
 		case outRestart:
 			rs = newRestarts(s.cfg.Policy)
@@ -354,7 +357,7 @@ func (s *Supervisor) launch() (*process, func(context.Context) error, error) {
 }
 
 // watch follows a running process until it exits or a command ends it.
-func (s *Supervisor) watch(p *process, ready func(context.Context) error) (out outcome, notReady bool) {
+func (s *Supervisor) watch(p *process, ready func(context.Context) error) (out outcome, notReady, forced bool) {
 	defer s.reap(p)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -379,7 +382,7 @@ func (s *Supervisor) watch(p *process, ready func(context.Context) error) (out o
 	for {
 		select {
 		case <-p.exited:
-			return outExited, false
+			return outExited, false, false
 		case <-readyCh:
 			readyCh = nil
 			deadline.Stop()
@@ -393,31 +396,29 @@ func (s *Supervisor) watch(p *process, ready func(context.Context) error) (out o
 			s.line("strelkad: " + s.cfg.Name + " не ответил за " + s.cfg.ReadyTimeout.String() + ", перезапускаю")
 			p.kill()
 			<-p.exited
-			return outExited, true
+			return outExited, true, false
 		case c := <-s.cmds:
 			switch c {
 			case cmdStart:
 				continue
 			case cmdStop:
-				s.terminate(p)
-				return outStop, false
+				return outStop, false, s.terminate(p)
 			case cmdRestart:
-				s.terminate(p)
-				return outRestart, false
+				return outRestart, false, s.terminate(p)
 			case cmdClose:
-				s.terminate(p)
-				return outClose, false
+				return outClose, false, s.terminate(p)
 			}
 		}
 	}
 }
 
 // terminate asks the process to stop and kills it if it does not listen.
-func (s *Supervisor) terminate(p *process) {
+// It reports whether the kill was needed.
+func (s *Supervisor) terminate(p *process) (forced bool) {
 	select {
 	case <-p.exited:
 		// Already gone: do not signal a PID that is no longer ours.
-		return
+		return false
 	default:
 	}
 	if err := p.softStop(); err == nil {
@@ -425,12 +426,13 @@ func (s *Supervisor) terminate(p *process) {
 		defer grace.Stop()
 		select {
 		case <-p.exited:
-			return
+			return false
 		case <-grace.C:
 		}
 	}
 	p.kill()
 	<-p.exited
+	return true
 }
 
 // reap runs once the process is gone: it lets the output reader finish, so
