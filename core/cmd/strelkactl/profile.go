@@ -363,3 +363,41 @@ func setCmd(ctx context.Context, c *ipc.Client, args []string) error {
 	}
 	return call(ctx, c, proto.MethodSettingsSet, map[string]any{"patch": patch}, nil)
 }
+
+// connsCmd prints one snapshot of the live connections: who is talking to
+// whom and by which route. The daemon sends them once a second to whoever
+// subscribes; one message is enough here.
+func connsCmd(ctx context.Context, c *ipc.Client) error {
+	if err := call(ctx, c, proto.MethodStateSubscribe, proto.TopicsParams{Topics: []string{proto.TopicConnections}}, nil); err != nil {
+		return err
+	}
+	timeout := time.After(4 * time.Second)
+	for {
+		select {
+		case n, ok := <-c.Notifications():
+			if !ok {
+				return ipc.ErrClosed
+			}
+			if n.Method != proto.TopicConnections {
+				continue
+			}
+			var conns []proto.Connection
+			if err := json.Unmarshal(n.Params, &conns); err != nil {
+				return err
+			}
+			for _, cn := range conns {
+				process := cn.Process
+				if process == "" {
+					process = "—"
+				}
+				fmt.Println(fmt.Sprintf("%-6s %-28s %-40s ", cn.Route, cut(process, 28), cut(cn.Host, 40)) + strings.Join(cn.Chain, " <- "))
+			}
+			fmt.Println("Соединений:", len(conns))
+			return nil
+		case <-timeout:
+			return errors.New("служба не прислала список соединений: VPN включён?")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}

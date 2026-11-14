@@ -42,6 +42,7 @@ func usage() {
   subs rm НОМЕР          удалить подписку вместе с серверами
   subs rename НОМЕР ИМЯ  переименовать
   servers                серверы: кто выбран, пинг, статистика
+  conns                  открытые соединения: программа, сайт, через VPN или напрямую
   select СЕРВЕР          выбрать сервер, без перезапуска VPN
   test [СЕРВЕР…]         проверить серверы (все или перечисленные); нужен включённый VPN
   mode [rule|global]     режим: через VPN только список или весь трафик
@@ -80,7 +81,7 @@ func realMain(args []string) int {
 	cmd, rest := rest[0], rest[1:]
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
-		"subs", "servers", "select", "test", "mode", "rules", "set", "import-legacy":
+		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy":
 	case "help":
 		usage()
 		return 0
@@ -127,6 +128,8 @@ func realMain(args []string) int {
 		err = subsCmd(ctx, c, rest)
 	case "servers":
 		err = serversCmd(ctx, c)
+	case "conns":
+		err = connsCmd(ctx, c)
 	case "select":
 		err = selectCmd(ctx, c, rest)
 	case "test":
