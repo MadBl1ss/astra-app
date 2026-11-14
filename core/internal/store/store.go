@@ -25,6 +25,16 @@ func (p Paths) LogsDir() string     { return filepath.Join(p.Data, "logs") }
 func (p Paths) Journal() string     { return filepath.Join(p.Data, "journal.jsonl") }
 func (p Paths) DesiredFile() string { return filepath.Join(p.Data, "desired.json") }
 
+// ProfileFile holds the subscriptions and their servers, keys included.
+func (p Paths) ProfileFile() string  { return filepath.Join(p.Data, "profile.json") }
+func (p Paths) SettingsFile() string { return filepath.Join(p.Data, "settings.json") }
+func (p Paths) StatsFile() string    { return filepath.Join(p.Data, "stats.json") }
+
+// RulesDir holds the rule-set files; the engine's config names them
+// relative to the data folder.
+func (p Paths) RulesDir() string   { return filepath.Join(p.Data, "rules") }
+func (p Paths) XrayConfig() string { return filepath.Join(p.Data, "run", "xray.json") }
+
 // EngineLog is where an engine's stderr is kept, e.g. logs/sing-box.log.
 func (p Paths) EngineLog(name string) string { return filepath.Join(p.Data, "logs", name+".log") }
 

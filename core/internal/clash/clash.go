@@ -239,3 +239,66 @@ func (cl *Client) SwitchTo(ctx context.Context, selector, tag string) error {
 	body, _ := json.Marshal(map[string]string{"name": tag})
 	return cl.do(ctx, 5*time.Second, "PUT", "/proxies/"+url.PathEscape(selector), body, nil)
 }
+
+// Conn is one open connection as GET /connections reports it.
+type Conn struct {
+	ID          string
+	Host        string
+	DestIP      string
+	DestPort    string
+	ProcessPath string
+	Chains      []string // from the server actually used up to the group
+	Upload      int64
+	Download    int64
+	Start       string
+}
+
+// Direct reports whether the connection left without the VPN.
+func (c Conn) Direct() bool {
+	for _, ch := range c.Chains {
+		if ch == "direct" {
+			return true
+		}
+	}
+	return false
+}
+
+// Snapshot is the byte counters and every open connection, in one request.
+type Snapshot struct {
+	UpTotal   int64
+	DownTotal int64
+	Conns     []Conn
+}
+
+// Snapshot reads GET /connections in full.
+func (cl *Client) Snapshot(ctx context.Context) (Snapshot, error) {
+	var r struct {
+		DownloadTotal int64 `json:"downloadTotal"`
+		UploadTotal   int64 `json:"uploadTotal"`
+		Connections   []struct {
+			ID       string   `json:"id"`
+			Chains   []string `json:"chains"`
+			Upload   int64    `json:"upload"`
+			Download int64    `json:"download"`
+			Start    string   `json:"start"`
+			Metadata struct {
+				Host        string `json:"host"`
+				DstIP       string `json:"destinationIP"`
+				DstPort     string `json:"destinationPort"`
+				ProcessPath string `json:"processPath"`
+			} `json:"metadata"`
+		} `json:"connections"`
+	}
+	if err := cl.do(ctx, 0, "GET", "/connections", nil, &r); err != nil {
+		return Snapshot{}, err
+	}
+	out := Snapshot{UpTotal: r.UploadTotal, DownTotal: r.DownloadTotal, Conns: make([]Conn, 0, len(r.Connections))}
+	for _, c := range r.Connections {
+		out.Conns = append(out.Conns, Conn{
+			ID: c.ID, Host: c.Metadata.Host, DestIP: c.Metadata.DstIP, DestPort: c.Metadata.DstPort,
+			ProcessPath: c.Metadata.ProcessPath, Chains: c.Chains,
+			Upload: c.Upload, Download: c.Download, Start: c.Start,
+		})
+	}
+	return out, nil
+}

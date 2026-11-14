@@ -276,3 +276,7 @@ type TrafficSample struct {
 	Up   int64     `json:"up"`
 	Down int64     `json:"down"`
 }
+
+type RulesProcessesResult struct {
+	Processes []ProcessInfo `json:"processes"`
+}

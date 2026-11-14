@@ -49,7 +49,12 @@ func TestInterruptStopsTheEngineAndExitsCleanly(t *testing.T) {
 		t.Fatal(err)
 	}
 	copyFile(t, self, paths.Engine("sing-box"))
-	if err := os.WriteFile(paths.RunConfig(), []byte(`{}`), 0o600); err != nil {
+	// One made-up server: without any there is nothing to switch on. The
+	// stand-in engine also answers "sing-box check" (see enginetest.Main).
+	profile := `{"servers":[{"id":"t-DE","name":"Germany","protocol":"vless","via":"sing-box","host":"de.example.com","port":443,
+		"outbound":{"type":"vless","tag":"t-DE","server":"de.example.com","server_port":443,"uuid":"11111111-1111-4111-8111-111111111111"},"sub":""}],
+		"selected":"t-DE","mode":"rule"}`
+	if err := os.WriteFile(paths.ProfileFile(), []byte(profile), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(paths.DesiredFile(), []byte(`{"desired":"on"}`), 0o600); err != nil {

@@ -42,6 +42,12 @@ func Main() {
 	if script == "" {
 		return
 	}
+	// The daemon also runs the engine as a tool ("check", "rule-set ...").
+	// The fake approves everything; only "run", or no command at all, makes
+	// it an engine.
+	if len(os.Args) > 1 && os.Args[1] != "run" && !strings.HasPrefix(os.Args[1], "-") {
+		os.Exit(0)
+	}
 	run(strings.Split(script, ","))
 	os.Exit(0)
 }
@@ -94,6 +100,7 @@ func run(script []string) {
 			}
 			fmt.Fprint(w, `{"version":"fake-engine"}`)
 		})
+		newFakeClash().register(mux, secret)
 		// Test controls: make a healthy engine die or stop listening.
 		mux.HandleFunc("/fake/crash", func(http.ResponseWriter, *http.Request) {
 			fmt.Fprintln(os.Stderr, "FATAL fake engine: crashing on request")

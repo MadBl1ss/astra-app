@@ -17,6 +17,7 @@ import (
 	"strelka/internal/engine/enginetest"
 	"strelka/internal/ipc"
 	"strelka/internal/store"
+	"strelka/internal/testjson"
 	"strelka/proto"
 )
 
@@ -37,6 +38,9 @@ type rig struct {
 	exited chan error
 	c      *ipc.Client
 
+	d        *Daemon
+	checkErr atomic.Pointer[error] // what the stand-in for "sing-box check" answers
+
 	last    proto.State
 	journal []proto.JournalEntry
 }
@@ -49,16 +53,38 @@ var fastPolicy = engine.Policy{
 	CrashWindow: 2 * time.Minute,
 }
 
-// newData makes a data folder with a minimal ready config, as stage 01
-// expects to find one.
+// testProfile is a profile with two made-up servers, t-DE selected.
+const testProfile = `{
+  "hwid": "testhwid0123456789",
+  "subs": [],
+  "servers": [
+    {"id": "t-DE", "name": "Germany", "country": "DE", "protocol": "vless", "via": "sing-box", "host": "de.example.com", "port": 443,
+     "outbound": {"type": "vless", "tag": "t-DE", "server": "de.example.com", "server_port": 443, "uuid": "11111111-1111-4111-8111-111111111111"}, "sub": ""},
+    {"id": "t-NL", "name": "Netherlands", "country": "NL", "protocol": "trojan", "via": "sing-box", "host": "nl.example.com", "port": 443,
+     "outbound": {"type": "trojan", "tag": "t-NL", "server": "nl.example.com", "server_port": 443, "password": "made-up"}, "sub": ""}
+  ],
+  "selected": "t-DE",
+  "mode": "rule",
+  "favorites": [],
+  "nextSub": 1
+}`
+
+// newData makes a data folder with a profile of two servers, so the VPN has
+// something to start with.
 func newData(t *testing.T) store.Paths {
+	t.Helper()
+	paths := emptyData(t)
+	if err := os.WriteFile(paths.ProfileFile(), []byte(testProfile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
+// emptyData is the data folder of a fresh install: no profile at all.
+func emptyData(t *testing.T) store.Paths {
 	t.Helper()
 	paths := store.Paths{Data: t.TempDir(), Engines: t.TempDir()}
 	if err := paths.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	cfg := `{"log":{"level":"info","output":"box.log"},"inbounds":[{"type":"mixed","listen_port":20808}]}`
-	if err := os.WriteFile(paths.RunConfig(), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return paths
@@ -80,6 +106,8 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	xrayDir := filepath.Join(paths.Data, "fake-xray")
+	os.MkdirAll(xrayDir, 0o700)
 	d, err := New(Options{
 		Paths: paths,
 		Launch: func(cfgPath string) engine.Launch {
@@ -89,6 +117,22 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 				Env:  enginetest.Env(script, paths.Data, "", ""),
 			}
 		},
+		// The fake stands in for Xray too: all the daemon asks of the helper
+		// is that it listens on its first port.
+		LaunchXray: func(_ string, port int) engine.Launch {
+			return engine.Launch{
+				Exe:  self,
+				Args: []string{"run"},
+				Env:  enginetest.Env("ok", xrayDir, fmt.Sprintf("127.0.0.1:%d", port), ""),
+			}
+		},
+		CheckConfig: func(context.Context, string) error {
+			if e := r.checkErr.Load(); e != nil {
+				return *e
+			}
+			return nil
+		},
+		CheckXray: func(context.Context, string) error { return nil },
 		Policy:    fastPolicy,
 		StopGrace: time.Second,
 		Logf:      t.Logf,
@@ -97,6 +141,7 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 		l.Close()
 		t.Fatal(err)
 	}
+	r.d = d
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	go func() { r.exited <- d.Run(ctx, l) }()
@@ -196,7 +241,7 @@ func (r *rig) engine() proto.EngineStatus {
 	r.t.Helper()
 	var res proto.EngineStatusResult
 	r.call(proto.MethodEngineStatus, nil, &res)
-	if len(res.Engines) != 1 {
+	if len(res.Engines) == 0 || res.Engines[0].Name != boxName {
 		r.t.Fatalf("engine.status: %+v", res)
 	}
 	return res.Engines[0]
@@ -276,26 +321,22 @@ func TestStartCrashRecoverStop(t *testing.T) {
 		t.Fatalf("engine.status после старта: %+v", first)
 	}
 
-	// The engine got this run's API address and secret, and logs to stderr.
-	var cfg struct {
-		Log          map[string]any `json:"log"`
-		Inbounds     []any          `json:"inbounds"`
-		Experimental struct {
-			ClashAPI struct {
-				Controller string `json:"external_controller"`
-				Secret     string `json:"secret"`
-			} `json:"clash_api"`
-		} `json:"experimental"`
-	}
+	// The engine got a config built from the profile, with this run's API
+	// address and secret, logging to stderr.
 	raw, _ := os.ReadFile(r.paths.RunConfig())
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		t.Fatal(err)
+	api := testjson.Get(raw, "experimental.clash_api.external_controller")
+	if !strings.HasPrefix(api, "127.0.0.1:") || len(testjson.Get(raw, "experimental.clash_api.secret")) != 32 {
+		t.Errorf("clash_api в конфиге: %s", testjson.Get(raw, "experimental.clash_api"))
 	}
-	if !strings.HasPrefix(cfg.Experimental.ClashAPI.Controller, "127.0.0.1:") || len(cfg.Experimental.ClashAPI.Secret) != 32 {
-		t.Errorf("clash_api в конфиге: %+v", cfg.Experimental.ClashAPI)
+	sel := testjson.Find(raw, "outbounds", "tag", "proxy")
+	if testjson.Get(sel, "outbounds") != `["t-DE","t-NL"]` || testjson.Get(sel, "default") != "t-DE" {
+		t.Errorf("селектор в конфиге: %s", sel)
 	}
-	if _, has := cfg.Log["output"]; has || cfg.Log["level"] != "info" || len(cfg.Inbounds) != 1 {
-		t.Errorf("конфиг после подстановки: log=%v inbounds=%v", cfg.Log, cfg.Inbounds)
+	if testjson.Get(raw, "log.output") != "" || testjson.Get(testjson.Find(raw, "inbounds", "type", "tun"), "interface_name") != "Strelka" {
+		t.Errorf("конфиг: log=%s inbounds=%s", testjson.Get(raw, "log"), testjson.Get(raw, "inbounds"))
+	}
+	if st.Server.Selected == nil || *st.Server.Selected != "t-DE" || len(st.Servers) != 2 || st.VPN.Mode != proto.ModeRule {
+		t.Errorf("серверы в состоянии: выбран %s, всего %d", deref(st.Server.Selected), len(st.Servers))
 	}
 
 	// on -> recovering -> on, without anyone asking
@@ -433,19 +474,35 @@ func TestCrashLoopEndsInFailedAndCanBeRetried(t *testing.T) {
 	}
 }
 
-func TestStopFromFailedAndMissingConfig(t *testing.T) {
-	paths := newData(t)
-	if err := os.Remove(paths.RunConfig()); err != nil {
-		t.Fatal(err)
+func TestNoServersAndRejectedConfig(t *testing.T) {
+	// A fresh install: nothing to start with.
+	r := startRig(t, emptyData(t), "ok")
+	err := r.tryCall(proto.MethodVPNStart, nil, nil)
+	var perr *proto.Error
+	if !errors.As(err, &perr) || perr.Code != proto.CodeNoServers {
+		t.Fatalf("vpn.start без серверов: %v, жду код %d", err, proto.CodeNoServers)
 	}
-	r := startRig(t, paths, "ok")
+	if r.last.VPN.Desired != proto.DesiredOff || r.last.VPN.Phase != proto.PhaseOff {
+		t.Errorf("после отказа: %+v", r.last.VPN)
+	}
+	r.shutdown()
+
+	// The engine refuses the config: the VPN fails with the reason "config"
+	// and the engine is never started.
+	paths := newData(t)
+	r = startRig(t, paths, "ok")
+	refusal := errors.New("sing-box check: unknown field")
+	r.checkErr.Store(&refusal)
 	r.call(proto.MethodVPNStart, nil, nil)
 	r.waitPhase(proto.PhaseFailed)
-	if r.last.VPN.FailReason == nil || *r.last.VPN.FailReason != proto.FailMissing {
-		t.Fatalf("нет конфига: причина %s, жду missing", deref(r.last.VPN.FailReason))
+	if r.last.VPN.FailReason == nil || *r.last.VPN.FailReason != proto.FailConfig {
+		t.Fatalf("движок не принял конфиг: причина %s, жду config", deref(r.last.VPN.FailReason))
 	}
 	if n := enginetest.Starts(paths.Data); n != 0 {
-		t.Errorf("без конфига движок всё равно запускался: %d", n)
+		t.Errorf("с негодным конфигом движок всё равно запускался: %d", n)
+	}
+	if _, err := os.Stat(paths.RunConfig()); err == nil {
+		t.Error("непроверенный конфиг стал рабочим")
 	}
 
 	r.call(proto.MethodVPNStop, nil, nil)
@@ -454,13 +511,10 @@ func TestStopFromFailedAndMissingConfig(t *testing.T) {
 		t.Errorf("после stop из failed: %+v", r.last.VPN)
 	}
 
-	// A config that is not JSON is a different reason.
-	os.WriteFile(paths.RunConfig(), []byte("{ это не JSON"), 0o600)
+	// With the cause gone the next start works.
+	r.checkErr.Store(nil)
 	r.call(proto.MethodVPNStart, nil, nil)
-	r.waitPhase(proto.PhaseFailed)
-	if r.last.VPN.FailReason == nil || *r.last.VPN.FailReason != proto.FailConfig {
-		t.Errorf("битый конфиг: причина %s, жду config", deref(r.last.VPN.FailReason))
-	}
+	r.waitPhase(proto.PhaseOn)
 }
 
 func TestErrorsAreCodedAndWorded(t *testing.T) {
@@ -477,7 +531,23 @@ func TestErrorsAreCodedAndWorded(t *testing.T) {
 			t.Errorf("%s: текст ошибки должен быть русским: %q", method, perr.Message)
 		}
 	}
-	check("mode.set", map[string]string{"mode": "global"}, proto.CodeMethodNotFound) // a later stage
+	check("journal.list", nil, proto.CodeMethodNotFound) // a later stage
+	check(proto.MethodModeSet, map[string]string{"mode": "всё"}, proto.CodeInvalidParams)
+	check(proto.MethodModeSet, nil, proto.CodeInvalidParams)
+	check(proto.MethodServerSelect, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)
+	check(proto.MethodServerTest, nil, proto.CodeInvalid) // VPN is off
+	check(proto.MethodServerRemove, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)
+	check(proto.MethodSubsAdd, proto.SubsAddParams{URL: "не ссылка"}, proto.CodeInvalid)
+	check(proto.MethodSubsAddLink, proto.SubsAddLinkParams{Link: "vmess://abc"}, proto.CodeInvalid)
+	check(proto.MethodSubsUpdate, nil, proto.CodeNotFound) // no subscriptions
+	check(proto.MethodSubsRemove, proto.IDParams{ID: "s9"}, proto.CodeNotFound)
+	check(proto.MethodRulesAdd, proto.RulesAddParams{List: "vpn", Value: "просто слово"}, proto.CodeInvalid)
+	check(proto.MethodRulesAdd, proto.RulesAddParams{List: "мимо", Value: "example.com"}, proto.CodeInvalidParams)
+	check(proto.MethodRulesRemove, proto.RuleRef{List: "vpn", Kind: "suffix", Value: "no.example.com"}, proto.CodeNotFound)
+	check(proto.MethodSettingsSet, map[string]any{"patch": map[string]any{"нет": 1}}, proto.CodeInvalidParams)
+	check(proto.MethodSettingsSet, map[string]any{"patch": map[string]any{"ipv6": "иногда"}}, proto.CodeInvalidParams)
+	check(proto.MethodSettingsSet, map[string]any{"patch": map[string]any{"localProxyPort": 80}}, proto.CodeInvalidParams)
+	check(proto.MethodLegacyImport, proto.LegacyImportParams{Dir: t.TempDir()}, proto.CodeInvalid) // not an old Strelka
 	check("нет.такого", nil, proto.CodeMethodNotFound)
 	check(proto.MethodStateSubscribe, map[string]any{"topics": []string{"всё"}}, proto.CodeInvalidParams)
 	check(proto.MethodStateSubscribe, map[string]any{"topics": "state"}, proto.CodeInvalidParams)
@@ -555,53 +625,6 @@ func TestSecondDaemonOnTheSameChannelIsRefused(t *testing.T) {
 	if l, err := ipc.Listen(r.name); err == nil {
 		l.Close()
 		t.Fatal("второй слушатель на канале службы должен получить ошибку")
-	}
-}
-
-func TestPatchConfig(t *testing.T) {
-	in := `{
-	  "log": {"level": "warn", "output": "box.log", "timestamp": true},
-	  "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": 20808}],
-	  "outbounds": [{"type": "direct", "tag": "direct"}],
-	  "experimental": {"clash_api": {"external_controller": "127.0.0.1:9090", "secret": "old", "default_mode": "Rule"},
-	                   "cache_file": {"enabled": true}},
-	  "big": 12345678901234567890
-	}`
-	out, err := patchConfig([]byte(in), "127.0.0.1:41234", "newsecret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got map[string]any
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatal(err)
-	}
-	api := got["experimental"].(map[string]any)["clash_api"].(map[string]any)
-	if api["external_controller"] != "127.0.0.1:41234" || api["secret"] != "newsecret" || api["default_mode"] != "Rule" {
-		t.Errorf("clash_api: %v", api)
-	}
-	if got["experimental"].(map[string]any)["cache_file"] == nil {
-		t.Error("соседние поля experimental потеряны")
-	}
-	log := got["log"].(map[string]any)
-	if _, has := log["output"]; has || log["level"] != "warn" || log["timestamp"] != true {
-		t.Errorf("log: %v", log)
-	}
-	if len(got["inbounds"].([]any)) != 1 || len(got["outbounds"].([]any)) != 1 {
-		t.Error("inbounds или outbounds изменились")
-	}
-	if !strings.Contains(string(out), "12345678901234567890") {
-		t.Error("большое число испорчено при пересборке")
-	}
-
-	// An empty config still gets what the daemon needs.
-	out, err = patchConfig([]byte(`{}`), "127.0.0.1:1", "s")
-	if err != nil || !strings.Contains(string(out), `"external_controller": "127.0.0.1:1"`) {
-		t.Errorf("пустой конфиг: %s, %v", out, err)
-	}
-	for _, bad := range []string{``, `[]`, `null`, `{"experimental": 5}`, `{"log": []}`, `{"experimental": {"clash_api": "x"}}`} {
-		if _, err := patchConfig([]byte(bad), "a", "b"); err == nil {
-			t.Errorf("конфиг %q должен дать ошибку", bad)
-		}
 	}
 }
 

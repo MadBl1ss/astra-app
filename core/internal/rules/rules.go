@@ -472,3 +472,22 @@ func Match(l List, kind, value string) (ruleKind, rule string, ok bool) {
 	}
 	return "", "", false
 }
+
+// Sanitize passes every value of a set read from somewhere else through
+// Normalize, as if the user had typed it, and drops what does not survive.
+func Sanitize(in Set) Set {
+	var out Set
+	for name, src := range map[string]*List{TagVPN: &in.VPN, TagDirect: &in.Direct} {
+		dst := out.list(name)
+		for _, kind := range []string{proto.KindProcess, proto.KindDomain, proto.KindSuffix, proto.KindKeyword, proto.KindIP} {
+			for _, v := range *field(src, kind) {
+				if _, clean, err := Normalize(kind, v); err == nil {
+					f := field(dst, kind)
+					*f = append(*f, clean)
+				}
+			}
+		}
+		tidy(dst)
+	}
+	return out
+}
