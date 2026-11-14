@@ -2,7 +2,7 @@
   "inbounds": [
     {
       "listen": "127.0.0.1",
-      "port": 17100,
+      "port": 17400,
       "protocol": "socks",
       "settings": {
         "ip": "127.0.0.1",
@@ -12,7 +12,7 @@
     },
     {
       "listen": "127.0.0.1",
-      "port": 17101,
+      "port": 17401,
       "protocol": "socks",
       "settings": {
         "ip": "127.0.0.1",

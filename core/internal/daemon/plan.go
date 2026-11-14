@@ -155,16 +155,23 @@ func (d *Daemon) hasXray() bool {
 	return err == nil
 }
 
+// scratch names a temporary file next to a config. The name must still end
+// in ".json": Xray tells the format of a config by its extension and
+// refuses a file called xray.json.new.
+func scratch(path, tag string) string {
+	return strings.TrimSuffix(path, ".json") + "." + tag + ".json"
+}
+
 // vet builds both configs of a plan into scratch files and runs the engines'
 // own checks on them. Nothing in use is touched.
-func (d *Daemon) vet(ctx context.Context, pl *plan, suffix string) error {
+func (d *Daemon) vet(ctx context.Context, pl *plan, tag string) error {
 	in := pl.in
 	in.Controller, in.Secret = "127.0.0.1:9", "check"
 	raw, err := confgen.Build(in)
 	if err != nil {
 		return err
 	}
-	tmp := d.opts.Paths.RunConfig() + suffix
+	tmp := scratch(d.opts.Paths.RunConfig(), tag)
 	defer os.Remove(tmp)
 	if err := store.WriteAtomic(tmp, raw, 0o600); err != nil {
 		return err
@@ -179,7 +186,7 @@ func (d *Daemon) vet(ctx context.Context, pl *plan, suffix string) error {
 	if err != nil {
 		return err
 	}
-	xtmp := d.opts.Paths.XrayConfig() + suffix
+	xtmp := scratch(d.opts.Paths.XrayConfig(), tag)
 	defer os.Remove(xtmp)
 	if err := store.WriteAtomic(xtmp, xraw, 0o600); err != nil {
 		return err
@@ -224,7 +231,7 @@ func (d *Daemon) prepareBox() (engine.Launch, func(context.Context) error, error
 	// One check per plan is enough: a restart after a crash builds the same
 	// config with another port.
 	if d.checkedBox.Load() != pl.gen {
-		tmp := cfgPath + ".new"
+		tmp := scratch(cfgPath, "new")
 		if err := store.WriteAtomic(tmp, raw, 0o600); err != nil {
 			return engine.Launch{}, nil, err
 		}
@@ -271,7 +278,7 @@ func (d *Daemon) prepareXray() (engine.Launch, func(context.Context) error, erro
 	}
 	cfgPath := d.opts.Paths.XrayConfig()
 	if d.checkedXray.Load() != pl.gen {
-		tmp := cfgPath + ".new"
+		tmp := scratch(cfgPath, "new")
 		if err := store.WriteAtomic(tmp, raw, 0o600); err != nil {
 			return engine.Launch{}, nil, err
 		}

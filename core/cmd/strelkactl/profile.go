@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -250,18 +249,25 @@ func rulesCmd(ctx context.Context, c *ipc.Client, args []string) error {
 		}
 		return nil
 	case "add":
-		fs := flag.NewFlagSet("rules add", flag.ContinueOnError)
-		fs.Usage = usage
-		kind := fs.String("kind", "", "")
-		if err := fs.Parse(args[1:]); err != nil {
-			return errors.New("неверные параметры")
+		// --kind may stand anywhere: "rules add vpn tele --kind keyword" is
+		// how one would type it, and the flag package stops at "vpn".
+		kind, rest := "", []string{}
+		for i := 1; i < len(args); i++ {
+			switch a := args[i]; {
+			case a == "--kind" && i+1 < len(args):
+				i++
+				kind = args[i]
+			case strings.HasPrefix(a, "--kind="):
+				kind = strings.TrimPrefix(a, "--kind=")
+			default:
+				rest = append(rest, a)
+			}
 		}
-		rest := fs.Args()
 		if len(rest) != 2 {
 			return errors.New("нужны список и значение: strelkactl rules add vpn curl.exe")
 		}
 		var ref proto.RuleRef
-		if err := call(ctx, c, proto.MethodRulesAdd, proto.RulesAddParams{List: rest[0], Value: rest[1], Kind: *kind}, &ref); err != nil {
+		if err := call(ctx, c, proto.MethodRulesAdd, proto.RulesAddParams{List: rest[0], Value: rest[1], Kind: kind}, &ref); err != nil {
 			return err
 		}
 		fmt.Printf("Добавлено в «%s»: %s (%s)\n", rest[0], ref.Value, ref.Kind)

@@ -239,7 +239,7 @@ func (d *Daemon) vetProfile(cand *profile.Profile, settings proto.Settings, prev
 	if err != nil {
 		return err
 	}
-	err = d.vet(context.Background(), pl, ".check")
+	err = d.vet(context.Background(), pl, "check")
 	if errors.Is(err, fs.ErrNotExist) {
 		// No engine to ask. The start will say so itself.
 		return nil

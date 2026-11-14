@@ -126,13 +126,13 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 				Env:  enginetest.Env("ok", xrayDir, fmt.Sprintf("127.0.0.1:%d", port), ""),
 			}
 		},
-		CheckConfig: func(context.Context, string) error {
+		CheckConfig: func(_ context.Context, path string) error {
 			if e := r.checkErr.Load(); e != nil {
 				return *e
 			}
-			return nil
+			return jsonNamed(path)
 		},
-		CheckXray: func(context.Context, string) error { return nil },
+		CheckXray: func(_ context.Context, path string) error { return jsonNamed(path) },
 		Policy:    fastPolicy,
 		StopGrace: time.Second,
 		Logf:      t.Logf,
@@ -157,6 +157,19 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 	// Subscribing to state brings the current document at once.
 	r.waitState("первое состояние после подписки", func(proto.State) bool { return true })
 	return r
+}
+
+// jsonNamed is the one thing the stand-in checks do share with the real
+// ones: Xray tells a config's format by its extension, so a scratch file
+// called xray.json.new is refused before it is even read.
+func jsonNamed(path string) error {
+	if !strings.HasSuffix(path, ".json") {
+		return fmt.Errorf("failed to get format of %s", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
+	return nil
 }
 
 // shutdown stops the daemon the way Ctrl+C does and waits for it.

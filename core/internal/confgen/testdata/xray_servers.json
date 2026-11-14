@@ -111,7 +111,7 @@
     },
     {
       "server": "127.0.0.1",
-      "server_port": 17100,
+      "server_port": 17400,
       "tag": "t-LV",
       "type": "socks",
       "version": "5"
@@ -140,7 +140,7 @@
     },
     {
       "server": "127.0.0.1",
-      "server_port": 17101,
+      "server_port": 17401,
       "tag": "t-SE",
       "type": "socks",
       "version": "5"

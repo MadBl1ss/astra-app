@@ -206,9 +206,6 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 		}
 	}
 	fmt.Printf("Сервер:  %s (всего серверов: %d, подписок: %d)\n", server, len(st.Servers), len(st.Subs))
-	if st.VPN.Phase == proto.PhaseOn {
-		fmt.Printf("Сейчас:  соединений %d, из них через VPN %d\n", st.Conns.Total, st.Conns.VPN)
-	}
 	for _, e := range es.Engines {
 		if e.Running {
 			since := ""

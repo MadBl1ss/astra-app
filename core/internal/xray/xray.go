@@ -27,8 +27,11 @@ import (
 	"time"
 )
 
-// BasePort is where the local SOCKS ports start.
-const BasePort = 17100
+// BasePort is where the local SOCKS ports start. The old tray used 17100 and
+// up; a different range lets the two run side by side during development and
+// while a user moves over, without one taking the ports the other's Xray is
+// about to bind.
+const BasePort = 17400
 
 // Needs tells whether a vless/trojan link must go through Xray.
 func Needs(q url.Values) bool {
