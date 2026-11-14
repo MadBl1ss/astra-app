@@ -192,7 +192,27 @@ $rule = Get-ExitIP
 Check 'В режиме «только список» снова напрямую' ($rule -ne '' -and $rule -eq $homeIP) "адрес $(Mask $rule)"
 Say ''
 
-Say '6. Движки не перезапускались'
+Say '6. Сервер через Xray в режиме «весь трафик»'
+# The one case where the rule that exempts our own xray.exe is all that
+# stands between the helper and a loop: its connections to the server would
+# otherwise be sent to the VPN, that is back into itself.
+$viaXray = @($state.servers | Where-Object { $_.alive -and $_.via -eq 'xray' } | Sort-Object ping)
+if ($viaXray.Count -eq 0) {
+    Say '        живых серверов через Xray нет, пропускаю'
+} else {
+    $x = $viaXray[0].id
+    Ctl select $x | Out-Null
+    Ctl mode global | Out-Null
+    Start-Sleep -Seconds 4
+    $xrayIP = Get-ExitIP
+    Check "Через $x весь трафик идёт в VPN" ($xrayIP -ne '' -and $xrayIP -ne $homeIP) "адрес $(Mask $xrayIP)"
+    Ctl mode rule | Out-Null
+    Ctl select $original | Out-Null
+    Start-Sleep -Seconds 2
+}
+Say ''
+
+Say '7. Движки не перезапускались'
 $after = Get-Engines
 foreach ($e in $before) {
     $now = $after | Where-Object { $_.name -eq $e.name }
@@ -200,7 +220,7 @@ foreach ($e in $before) {
 }
 Say ''
 
-Say '7. Локальная сеть (strict_route)'
+Say '8. Локальная сеть (strict_route)'
 # The router is the default gateway of a physical adapter; the TUN has a
 # default route of its own, with a better metric.
 $physical = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { $_.ifIndex })
