@@ -113,7 +113,7 @@
   // A rule made from a live connection: said under the field like any other.
   function fromLive(list: RuleListName, rule: RuleRef, _what: string): void {
     void add(list, rule.value, rule.kind).then((ok) => {
-      if (ok) addNote = `${addNote} ${t.newConns}`;
+      if (ok) addNote = `${addNote}. ${t.newConns}`;
     });
   }
 

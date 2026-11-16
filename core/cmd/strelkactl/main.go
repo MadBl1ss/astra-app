@@ -90,7 +90,7 @@ func realMain(args []string) int {
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
 		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy",
-		"journal", "action":
+		"journal", "action", "versions", "report":
 	case "help":
 		usage()
 		return 0
