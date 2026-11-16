@@ -1,0 +1,68 @@
+/* Design tokens. Colours are used only through these
+   variables; the theme is the data-theme attribute on <html>, set before the
+   first paint by index.html and afterwards by lib/theme.svelte.ts. */
+
+:root {
+  --bg: #0f1216;
+  --surface: #161a20;
+  --surface-2: #1d222a;
+  --line: #262c36;
+  --text: #e8ebf0;
+  --muted: #8b94a3;
+  --vpn: #3ddc97;
+  --direct: #7c8aa5;
+  --warn: #f5b84b;
+  --bad: #f2555a;
+
+  --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', ui-monospace, monospace;
+
+  --fs-cap: 12px;
+  --fs-body: 13px;
+  --fs-head: 15px;
+  --fs-state: 28px;
+
+  /* 4 px grid */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+
+  --row: 36px;
+  --r-card: 10px;
+  --r-ctl: 6px;
+
+  --fast: 120ms;
+  --slow: 180ms;
+
+  --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.32);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eceef2;
+  --line: #dfe2e8;
+  --text: #14171c;
+  --muted: #5d6675;
+  --vpn: #0f9d63;
+  --direct: #6b7890;
+  --warn: #b97a09;
+  --bad: #d23b41;
+
+  --shadow-pop: 0 8px 28px rgb(20 23 28 / 0.14);
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 0ms;
+    --slow: 0ms;
+  }
+}
