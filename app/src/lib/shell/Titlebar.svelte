@@ -6,7 +6,7 @@
   // The window has no system frame; this strip is its caption. Dragging is
   // done by Tauri for elements marked data-tauri-drag-region. In a browser
   // tab the buttons have nothing to act on and do nothing.
-  async function act(what: 'minimize' | 'hide'): Promise<void> {
+  async function act(what: 'minimize' | 'close'): Promise<void> {
     if (!inWindow) return;
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     await getCurrentWindow()[what]();
@@ -22,8 +22,9 @@
   <button type="button" class="wb" aria-label={ru.app.minimize} title={ru.app.minimize} onclick={() => act('minimize')}>
     <Icon name="minimize" size={16} />
   </button>
-  <!-- Closing hides the window to the tray; quitting is in the tray menu. -->
-  <button type="button" class="wb" aria-label={ru.app.close} title={ru.app.close} onclick={() => act('hide')}>
+  <!-- Asking to close is answered by the shell with hiding to the tray, the
+       same as Alt+F4; quitting is in the tray menu. -->
+  <button type="button" class="wb" aria-label={ru.app.close} title={ru.app.close} onclick={() => act('close')}>
     <Icon name="close" size={16} />
   </button>
 </header>

@@ -12,12 +12,13 @@
   import { clock, speed } from '../format';
   import { ru } from '../i18n/ru';
   import type { Mode, Server, State } from '../proto';
+  import { win } from '../shell/window.svelte';
   import { daemon, type PathRate } from '../store.svelte';
   import {
     banner,
-    countryOf,
     describe,
     displayName,
+    flagOf,
     guardLook,
     pingTone,
     selectedServer,
@@ -44,7 +45,7 @@
     return () => document.removeEventListener('visibilitychange', update);
   });
   $effect(() => {
-    if (visible) return daemon.watchConnections();
+    if (visible && win.shown) return daemon.watchConnections();
   });
 
   // Until the first two lists arrive only the counts from State are known.
@@ -108,7 +109,7 @@
   }
 
   const serverItems = $derived<SelectItem[]>(
-    sortedServers(s).map((x) => ({ value: x.id, label: displayName(x), badge: countryOf(x), ...pingText(x) })),
+    sortedServers(s).map((x) => ({ value: x.id, label: displayName(x), flag: flagOf(x), ...pingText(x) })),
   );
 
   const modes: readonly { value: Mode; label: string }[] = [

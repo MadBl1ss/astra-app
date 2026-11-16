@@ -14,8 +14,10 @@
   --warn: #f5b84b;
   --bad: #f2555a;
 
-  --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  /* The first family holds nothing but flag emoji and exists only where the
+     system cannot draw them (see main.ts); everything else falls through. */
+  --font: 'Twemoji Country Flags', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Twemoji Country Flags', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Cascadia Mono', ui-monospace, monospace;
 
   --fs-cap: 12px;

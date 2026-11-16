@@ -2,8 +2,8 @@
   export interface SelectItem {
     value: string;
     label: string;
-    /** A short code in a box before the label, e.g. a country. */
-    badge?: string | null;
+    /** A flag emoji before the label. */
+    flag?: string | null;
     /** A right-aligned note, e.g. a ping. */
     meta?: string;
     metaTone?: 'ok' | 'warn' | 'bad' | 'none';
@@ -120,7 +120,7 @@
     {onkeydown}
   >
     {#if current}
-      {#if current.badge}<span class="cc">{current.badge}</span>{/if}
+      {#if current.flag}<span class="flag">{current.flag}</span>{/if}
       <span class="grow">{current.label}</span>
       {#if current.meta}<span class="meta {current.metaTone ?? 'none'}">{current.meta}</span>{/if}
     {:else}
@@ -142,7 +142,7 @@
           onclick={() => pick(item)}
           onpointermove={() => (active = i)}
         >
-          <span class="cc" class:blank={!item.badge}>{item.badge ?? ''}</span>
+          <span class="flag">{item.flag ?? ''}</span>
           <span class="grow">{item.label}</span>
           {#if item.meta}<span class="meta {item.metaTone ?? 'none'}">{item.meta}</span>{/if}
           <span class="tick">{#if item.value === value}<Icon name="check" size={14} />{/if}</span>
@@ -193,22 +193,13 @@
     color: var(--muted);
   }
 
-  .cc {
+  /* A fixed cell, so that names line up whether or not a flag is known. */
+  .flag {
     flex: none;
-    min-width: 24px;
-    padding: 0 4px;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    color: var(--muted);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    line-height: 15px;
+    width: 20px;
+    font-size: 15px;
+    line-height: 1;
     text-align: center;
-  }
-
-  .cc.blank {
-    border-color: transparent;
   }
 
   .meta {

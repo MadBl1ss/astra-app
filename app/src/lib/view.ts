@@ -11,7 +11,7 @@ const t = ru;
 /** The colour family of a state; a word or an icon always goes with it. */
 export type Tone = 'ok' | 'off' | 'busy' | 'warn' | 'bad';
 
-/** Names of the tray icons, see app/icons-src/. */
+/** Names of the tray icons, drawn by app/scripts/icons.mjs. */
 export type TrayIcon = 'on' | 'off' | 'connecting' | 'problem' | 'down' | 'blocked';
 
 /** How the two paths of the scheme are drawn. */
@@ -218,15 +218,20 @@ export function sortedServers(s: State): Server[] {
   });
 }
 
-// A flag emoji is two "regional indicator" letters. Windows has no glyphs for
-// them and prints the letters instead, so flags are never shown as emoji:
-// the country goes into a small badge with its code.
+// A flag emoji is two "regional indicator" letters. Subscriptions put flags
+// into server names; the window shows the flag once, in front of the name,
+// built from the country the daemon worked out.
 const FLAG = /[\u{1F1E6}-\u{1F1FF}]{2}/u;
 const FLAGS = /[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu;
 
+/** Any text without flag emoji: the daemon's lines quote server names. */
+export function noFlags(text: string): string {
+  return text.replace(FLAGS, '');
+}
+
 /** A server's name without the flag emoji subscriptions like to put in. */
 export function displayName(server: Server): string {
-  return server.name.replace(FLAGS, '').trim() || server.name;
+  return noFlags(server.name).trim() || server.name;
 }
 
 /** The country code for the badge: from the daemon, else from the flag. */
@@ -235,6 +240,13 @@ export function countryOf(server: Server): string | null {
   const flag = FLAG.exec(server.name)?.[0];
   if (!flag) return null;
   return [...flag].map((ch) => String.fromCharCode((ch.codePointAt(0) ?? 0) - 0x1f1e6 + 65)).join('');
+}
+
+/** The flag emoji of a server's country, or null when it is not known. */
+export function flagOf(server: Server): string | null {
+  const code = countryOf(server);
+  if (!code || !/^[A-Z]{2}$/.test(code)) return null;
+  return [...code].map((ch) => String.fromCodePoint(0x1f1e6 + ch.charCodeAt(0) - 65)).join('');
 }
 
 /** Ping colour by its thresholds. */

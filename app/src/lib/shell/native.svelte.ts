@@ -8,6 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { ru } from '../i18n/ru';
 import { daemon } from '../store.svelte';
 import { describe, displayName, selectedServer, type TrayIcon } from '../view';
+import { win } from './window.svelte';
 
 interface TrayView {
   icon: TrayIcon;
@@ -90,8 +91,18 @@ async function offerAutostart(): Promise<void> {
   }
 }
 
+async function watchWindow(): Promise<void> {
+  await listen<boolean>('window://shown', (event) => {
+    win.shown = event.payload;
+  });
+  // Started with --hidden, the page loads into a window nobody sees.
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  win.shown = await getCurrentWindow().isVisible();
+}
+
 export function start(): void {
   $effect.root(watchTray);
+  void watchWindow();
   void listen('tray://toggle', () => {
     if (daemon.ready) void daemon.toggleVpn();
   });
