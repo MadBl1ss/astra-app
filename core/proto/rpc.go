@@ -280,3 +280,61 @@ type TrafficSample struct {
 type RulesProcessesResult struct {
 	Processes []ProcessInfo `json:"processes"`
 }
+
+// Methods added with health and incidents.
+const (
+	MethodJournalList    = "journal.list"
+	MethodIncidentAction = "incident.action"
+)
+
+// JournalListParams pages through the journal from the newest entry back.
+type JournalListParams struct {
+	Before int64          `json:"before,omitempty"` // only entries older than this id
+	Limit  int            `json:"limit,omitempty"`  // 100 by default, 500 at most
+	Filter *JournalFilter `json:"filter,omitempty"`
+}
+
+// JournalFilter narrows journal.list; an empty field matches everything.
+type JournalFilter struct {
+	Cats     []string `json:"cats,omitempty"`
+	Levels   []string `json:"levels,omitempty"`
+	Incident string   `json:"incident,omitempty"`
+}
+
+type JournalListResult struct {
+	Entries []JournalEntry `json:"entries"` // newest first
+	More    bool           `json:"more"`    // older entries exist
+}
+
+type IncidentActionParams struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+}
+
+// Actions a toast or an incident can carry. open and dismiss are the
+// application's own; the rest go back to the daemon as incident.action.
+const (
+	ActionOpen       = "open"
+	ActionDismiss    = "dismiss"
+	ActionRetry      = "retry"
+	ActionRelease    = "release"
+	ActionUpdateSubs = "update_subs"
+	ActionSwitch     = "switch:" // followed by a server id
+)
+
+// Toast is the "toast" notification: something worth interrupting the user
+// for. The daemon has already decided that it is; the application shows it.
+type Toast struct {
+	ID       string        `json:"id"` // the same id replaces the toast on screen
+	Severity string        `json:"severity"`
+	Title    string        `json:"title"`
+	Body     string        `json:"body"`
+	Actions  []ToastAction `json:"actions"`
+	Sticky   bool          `json:"sticky"` // critical ones do not hide by themselves
+	Close    bool          `json:"close"`  // take the toast with this id off the screen
+}
+
+type ToastAction struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
