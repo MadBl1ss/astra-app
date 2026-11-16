@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Стрелка</title>
+    <script>
+      // Set the theme before the first paint, so a light-theme user never
+      // sees a dark flash. The same key is read by src/lib/theme.svelte.ts.
+      (function () {
+        var want = new URLSearchParams(location.search).get('theme');
+        try { want = want || localStorage.getItem('strelka.theme'); } catch (e) {}
+        if (want !== 'dark' && want !== 'light') {
+          want = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.dataset.theme = want;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
