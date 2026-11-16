@@ -43,6 +43,11 @@ type rig struct {
 
 	last    proto.State
 	journal []proto.JournalEntry
+	toasts  []proto.Toast
+
+	// network reports a change of the default route to the daemon, in place
+	// of the real monitor.
+	network func(up bool)
 }
 
 // fastPolicy has the shape of the real one with pauses a test can wait out.
@@ -92,6 +97,12 @@ func emptyData(t *testing.T) store.Paths {
 
 func startRig(t *testing.T, paths store.Paths, script string) *rig {
 	t.Helper()
+	return startRigWith(t, paths, script, nil)
+}
+
+// startRigWith lets a test adjust the daemon's options before it starts.
+func startRigWith(t *testing.T, paths store.Paths, script string, tweak func(*Options)) *rig {
+	t.Helper()
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -108,8 +119,14 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 	}
 	xrayDir := filepath.Join(paths.Data, "fake-xray")
 	os.MkdirAll(xrayDir, 0o700)
-	d, err := New(Options{
+	opts := Options{
 		Paths: paths,
+		// The machine's real routes are none of a test's business.
+		WatchNetwork: func(report func(up bool)) func() {
+			r.network = report
+			report(true)
+			return func() {}
+		},
 		Launch: func(cfgPath string) engine.Launch {
 			return engine.Launch{
 				Exe:  self,
@@ -136,7 +153,11 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 		Policy:    fastPolicy,
 		StopGrace: time.Second,
 		Logf:      t.Logf,
-	})
+	}
+	if tweak != nil {
+		tweak(&opts)
+	}
+	d, err := New(opts)
 	if err != nil {
 		l.Close()
 		t.Fatal(err)
@@ -153,7 +174,7 @@ func startRig(t *testing.T, paths store.Paths, script string) *rig {
 	if err != nil {
 		t.Fatalf("не подключился к службе: %v", err)
 	}
-	r.call(proto.MethodStateSubscribe, proto.TopicsParams{Topics: []string{proto.TopicState, proto.TopicJournal}}, nil)
+	r.call(proto.MethodStateSubscribe, proto.TopicsParams{Topics: []string{proto.TopicState, proto.TopicJournal, proto.TopicToast}}, nil)
 	// Subscribing to state brings the current document at once.
 	r.waitState("первое состояние после подписки", func(proto.State) bool { return true })
 	return r
@@ -222,6 +243,12 @@ func (r *rig) waitState(what string, ok func(proto.State) bool) []string {
 					r.t.Fatalf("запись журнала не разобрана: %v", err)
 				}
 				r.journal = append(r.journal, e)
+			case proto.TopicToast:
+				var toast proto.Toast
+				if err := json.Unmarshal(n.Params, &toast); err != nil {
+					r.t.Fatalf("уведомление не разобрано: %v", err)
+				}
+				r.toasts = append(r.toasts, toast)
 			case proto.TopicState:
 				var st proto.State
 				if err := json.Unmarshal(n.Params, &st); err != nil {
@@ -544,7 +571,7 @@ func TestErrorsAreCodedAndWorded(t *testing.T) {
 			t.Errorf("%s: текст ошибки должен быть русским: %q", method, perr.Message)
 		}
 	}
-	check("journal.list", nil, proto.CodeMethodNotFound) // a later stage
+	check("diag.run", nil, proto.CodeMethodNotFound) // a later stage
 	check(proto.MethodModeSet, map[string]string{"mode": "всё"}, proto.CodeInvalidParams)
 	check(proto.MethodModeSet, nil, proto.CodeInvalidParams)
 	check(proto.MethodServerSelect, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)
@@ -638,36 +665,5 @@ func TestSecondDaemonOnTheSameChannelIsRefused(t *testing.T) {
 	if l, err := ipc.Listen(r.name); err == nil {
 		l.Close()
 		t.Fatal("второй слушатель на канале службы должен получить ошибку")
-	}
-}
-
-func TestJournalSurvivesATornLine(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "journal.jsonl")
-	j := openJournal(path)
-	now := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	j.add(now, proto.CatSystem, proto.LevelInfo, "первая")
-	j.add(now, proto.CatVPN, proto.LevelProblem, "вторая")
-	j.close()
-
-	// Power went out in the middle of a write.
-	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
-	f.WriteString(`{"id":3,"t":"2026-11-12T10:00:0`)
-	f.Close()
-
-	j = openJournal(path)
-	defer j.close()
-	if len(j.entries) != 2 || j.entries[1].Text != "вторая" {
-		t.Fatalf("прочитано %d записей: %+v", len(j.entries), j.entries)
-	}
-	if e := j.add(now, proto.CatVPN, proto.LevelInfo, "третья"); e.ID != 3 || e.Incident != nil {
-		t.Errorf("новая запись: %+v, жду id 3", e)
-	}
-
-	// The ring is bounded; the file keeps everything.
-	for i := 0; i < journalRing+10; i++ {
-		j.add(now, proto.CatVPN, proto.LevelInfo, "запись")
-	}
-	if len(j.entries) != journalRing {
-		t.Errorf("в кольце %d записей, предел %d", len(j.entries), journalRing)
 	}
 }

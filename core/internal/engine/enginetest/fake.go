@@ -23,6 +23,8 @@ const (
 	// each start in a row does, e.g. "crash,crash,ok"; the last repeats.
 	//   ok    serve the API, exit cleanly when asked to stop
 	//   crash print a reason and exit with code 3 at once
+	//   tun   crash the way sing-box does when it cannot create its adapter
+	//   port  crash the way sing-box does when its port is taken
 	//   hang  serve the API, ignore every request to stop
 	//   mute  run without ever serving the API
 	EnvScript = "STRELKA_FAKE_ENGINE"
@@ -80,9 +82,16 @@ func run(script []string) {
 	}
 	fmt.Fprintf(os.Stderr, "INFO fake engine start=%d mode=%s pid=%d\n", n+1, mode, os.Getpid())
 
-	if mode == "crash" {
+	switch mode {
+	case "crash":
 		fmt.Fprintln(os.Stderr, "FATAL fake engine: crashing as scripted")
 		os.Exit(3)
+	case "tun":
+		fmt.Fprintln(os.Stderr, "FATAL[0000] start service: start inbound/tun[tun-in]: configure tun interface: Access is denied.")
+		os.Exit(1)
+	case "port":
+		fmt.Fprintln(os.Stderr, "FATAL[0000] start service: start inbound/mixed[mixed-in]: listen tcp 127.0.0.1:20808: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.")
+		os.Exit(1)
 	}
 
 	stop := make(chan os.Signal, 1)

@@ -12,7 +12,8 @@ import (
 // fakeClash is the part of the Clash API the daemon uses, over the selector
 // found in the config the fake was started with. A server whose tag contains
 // "dead" never answers a delay test; every other answers in a time derived
-// from its tag, so tests can tell servers apart.
+// from its tag, so tests can tell servers apart. Both can be overridden with
+// a script of answers, see /fake/script.
 type fakeClash struct {
 	mu      sync.Mutex
 	members []string
@@ -20,6 +21,11 @@ type fakeClash struct {
 	mode    string
 	tested  map[string]probe
 	closed  int // how many times DELETE /connections was called
+
+	scripts map[string][]string // per tag: answers to the next delay tests
+	asked   map[string]int      // per tag: delay tests so far
+	flowing bool                // the VPN connection receives bytes
+	rx      int64
 }
 
 type probe struct {
@@ -31,7 +37,7 @@ type probe struct {
 func DelayOf(tag string) int { return 40 + 7*len(tag) }
 
 func newFakeClash() *fakeClash {
-	fc := &fakeClash{mode: "Rule", tested: map[string]probe{}}
+	fc := &fakeClash{mode: "Rule", tested: map[string]probe{}, scripts: map[string][]string{}, asked: map[string]int{}}
 	var cfg struct {
 		Outbounds []struct {
 			Type      string   `json:"type"`
@@ -77,7 +83,15 @@ func (fc *fakeClash) member(tag string) bool {
 
 // test runs a delay test of one server. Called with the lock held.
 func (fc *fakeClash) test(tag string) (int, bool) {
-	if strings.Contains(tag, "dead") {
+	fc.asked[tag]++
+	fail := strings.Contains(tag, "dead")
+	if s := fc.scripts[tag]; len(s) > 0 {
+		fail = s[0] == "fail"
+		if len(s) > 1 { // the last answer repeats
+			fc.scripts[tag] = s[1:]
+		}
+	}
+	if fail {
 		delete(fc.tested, tag) // a failed test forgets the last result
 		return 0, false
 	}
@@ -130,7 +144,9 @@ func (fc *fakeClash) register(mux *http.ServeMux, secret string) {
 	})
 	handle("GET /proxies/{tag}/delay", func(w http.ResponseWriter, r *http.Request) {
 		tag := r.PathValue("tag")
-		if !fc.member(tag) {
+		// "direct" is an outbound like any other: the daemon tests it to
+		// learn whether there is internet past the VPN.
+		if !fc.member(tag) && tag != "direct" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -164,11 +180,14 @@ func (fc *fakeClash) register(mux *http.ServeMux, secret string) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	handle("GET /connections", func(w http.ResponseWriter, _ *http.Request) {
+		if fc.flowing {
+			fc.rx += 1000
+		}
 		reply(w, map[string]any{
-			"downloadTotal": 2048, "uploadTotal": 1024,
+			"downloadTotal": 2048 + fc.rx, "uploadTotal": 1024,
 			"connections": []any{
 				map[string]any{
-					"id": "c1", "chains": []string{fc.now, "proxy"}, "upload": 10, "download": 20,
+					"id": "c1", "chains": []string{fc.now, "proxy"}, "upload": 10, "download": 20 + fc.rx,
 					"start":    "2026-11-13T10:00:00Z",
 					"metadata": map[string]string{"host": "example.com", "destinationIP": "192.0.2.10", "destinationPort": "443", "processPath": "/apps/Browser.exe"},
 				},
@@ -186,6 +205,19 @@ func (fc *fakeClash) register(mux *http.ServeMux, secret string) {
 	})
 	// Test control: what the engine was last told.
 	handle("GET /fake/state", func(w http.ResponseWriter, _ *http.Request) {
-		reply(w, map[string]any{"now": fc.now, "mode": fc.mode, "closed": fc.closed, "members": fc.members})
+		reply(w, map[string]any{"now": fc.now, "mode": fc.mode, "closed": fc.closed, "members": fc.members, "asked": fc.asked})
+	})
+	// Test control: /fake/script?tag=t-DE&answers=fail,fail,ok sets what the
+	// next delay tests of a server (or of "direct") answer. The last answer
+	// repeats, so "fail" alone is a dead server and "ok" a revived one.
+	handle("GET /fake/script", func(w http.ResponseWriter, r *http.Request) {
+		fc.scripts[r.URL.Query().Get("tag")] = strings.Split(r.URL.Query().Get("answers"), ",")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Test control: /fake/traffic?on=1 makes the VPN connection receive
+	// bytes from now on, on=0 stops it.
+	handle("GET /fake/traffic", func(w http.ResponseWriter, r *http.Request) {
+		fc.flowing = r.URL.Query().Get("on") == "1"
+		w.WriteHeader(http.StatusNoContent)
 	})
 }

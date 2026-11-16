@@ -198,7 +198,7 @@ func TestBuildKeepsThePromises(t *testing.T) {
 	}
 
 	tun := testjson.Find(raw, "inbounds", "type", "tun")
-	if testjson.Get(tun, "interface_name") != "Strelka" || testjson.Get(tun, "strict_route") != "true" ||
+	if testjson.Get(tun, "interface_name") != TUNName || testjson.Get(tun, "strict_route") != "true" ||
 		testjson.Get(tun, "address.1") == "" || testjson.Get(tun, "mtu") != "9000" {
 		t.Errorf("TUN: %s", tun)
 	}

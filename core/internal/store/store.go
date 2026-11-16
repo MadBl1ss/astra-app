@@ -30,6 +30,9 @@ func (p Paths) ProfileFile() string  { return filepath.Join(p.Data, "profile.jso
 func (p Paths) SettingsFile() string { return filepath.Join(p.Data, "settings.json") }
 func (p Paths) StatsFile() string    { return filepath.Join(p.Data, "stats.json") }
 
+// WarnedFile remembers which subscription warnings were already shown.
+func (p Paths) WarnedFile() string { return filepath.Join(p.Data, "warned.json") }
+
 // RulesDir holds the rule-set files; the engine's config names them
 // relative to the data folder.
 func (p Paths) RulesDir() string   { return filepath.Join(p.Data, "rules") }

@@ -82,36 +82,49 @@ func (st *Stats) Round(started, now time.Time, pool []string, px map[string]clas
 		if !known {
 			continue
 		}
-		s := st.Servers[tag]
 		switch {
 		case answered(p):
-			if s != nil && !p.Tested.After(s.Seen) {
-				continue // the same result as last time
-			}
-			if s == nil {
-				s = &Stat{Avg: float64(p.Delay)}
-				st.Servers[tag] = s
-			} else {
-				s.Avg += weight * (float64(p.Delay) - s.Avg)
-				s.Miss -= weight * s.Miss
-			}
-			s.N++
-			s.Seen = p.Tested
-			changed = true
+			changed = st.Answered(tag, p.Delay, p.Tested) || changed
 		case working:
-			if s == nil {
-				s = &Stat{}
-				st.Servers[tag] = s
-			}
-			if now.Sub(s.MissAt) < missEvery {
-				continue
-			}
-			s.Miss += weight * (1 - s.Miss)
-			s.MissAt = now
-			changed = true
+			changed = st.Missed(tag, now) || changed
 		}
 	}
 	return changed
+}
+
+// Answered folds in one answer of a server. It reports false for a result
+// that is already counted.
+func (st *Stats) Answered(tag string, ms int, at time.Time) bool {
+	s := st.Servers[tag]
+	if s != nil && !at.After(s.Seen) {
+		return false // the same result as last time
+	}
+	if s == nil {
+		s = &Stat{Avg: float64(ms)}
+		st.Servers[tag] = s
+	} else {
+		s.Avg += weight * (float64(ms) - s.Avg)
+		s.Miss -= weight * s.Miss
+	}
+	s.N++
+	s.Seen = at
+	return true
+}
+
+// Missed records a check a server did not answer. The caller vouches that
+// the network was fine: without that a miss says nothing about the server.
+func (st *Stats) Missed(tag string, now time.Time) bool {
+	s := st.Servers[tag]
+	if s == nil {
+		s = &Stat{}
+		st.Servers[tag] = s
+	}
+	if now.Sub(s.MissAt) < missEvery {
+		return false
+	}
+	s.Miss += weight * (1 - s.Miss)
+	s.MissAt = now
+	return true
 }
 
 // Rating is what the order is built on: lower is better. A server that never

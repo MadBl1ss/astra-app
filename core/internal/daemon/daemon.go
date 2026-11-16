@@ -17,7 +17,10 @@ import (
 	"strelka/internal/clash"
 	"strelka/internal/confgen"
 	"strelka/internal/engine"
+	"strelka/internal/health"
+	"strelka/internal/incident"
 	"strelka/internal/ipc"
+	"strelka/internal/journal"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
 	"strelka/internal/stats"
@@ -62,6 +65,15 @@ type Options struct {
 	Policy       engine.Policy
 	ReadyTimeout time.Duration
 	StopGrace    time.Duration
+
+	// Health overrides the default thresholds (health.Default), and HealthTick how
+	// often the automata are given the time (once a second). Tests shrink
+	// both to run an outage in a moment.
+	Health     *health.Tuning
+	HealthTick time.Duration
+	// WatchNetwork replaces the route monitor: it is given the function to
+	// report "is there a default route" with and returns how to stop.
+	WatchNetwork func(report func(up bool)) (stop func())
 
 	// Logf receives the daemon's own diagnostics (English, for the console).
 	Logf func(format string, a ...any)
@@ -119,7 +131,7 @@ type Daemon struct {
 
 	// Everything below belongs to the loop goroutine.
 	st         proto.State
-	journal    *journal
+	journal    *journal.Journal
 	dirty      bool
 	lastSent   time.Time
 	flush      *time.Timer
@@ -139,6 +151,18 @@ type Daemon struct {
 	phaseBusy string // starting | stopping
 	job       string // updating_subs | testing
 	autoInfo  map[string]autoListInfo
+
+	// Health and incidents, see health.go.
+	tune        health.Tuning
+	hm          *health.Machine
+	im          *incident.Manager
+	hserver     string    // the server the machine was last told about
+	lastTick    time.Time // wall clock of the previous tick
+	toldOn      bool      // "подключён" was said for this start
+	subsChecked time.Time
+	statsDirty  bool
+	statsSaved  time.Time
+	hints       hintGate // shared with the supervisors' goroutines
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.
@@ -152,6 +176,9 @@ func New(opts Options) (*Daemon, error) {
 	if err := opts.Paths.Ensure(); err != nil {
 		return nil, fmt.Errorf("data folder: %w", err)
 	}
+	if opts.HealthTick <= 0 {
+		opts.HealthTick = time.Second
+	}
 	d := &Daemon{
 		opts:     opts,
 		inbox:    make(chan any, 256),
@@ -159,7 +186,12 @@ func New(opts Options) (*Daemon, error) {
 		st:       proto.NewState(Version),
 		pings:    map[string]ping{},
 		autoInfo: map[string]autoListInfo{},
+		tune:     health.Default(),
 	}
+	if opts.Health != nil {
+		d.tune = *opts.Health
+	}
+	d.hm, d.im = health.New(d.tune), incident.New(d.tune)
 
 	saved, err := store.LoadJSON(opts.Paths.DesiredFile(), desiredFile{Desired: proto.DesiredOff})
 	if err != nil {
@@ -201,7 +233,13 @@ func New(opts Options) (*Daemon, error) {
 		}
 	}
 
-	d.journal = openJournal(opts.Paths.Journal())
+	d.journal = journal.Open(opts.Paths.Journal())
+	// Incident ids go on from the last one on record, and warnings already
+	// given about a subscription are not given again by a new run.
+	d.im.SeedID(d.journal.LastIncident())
+	if warned, err := store.LoadJSON(opts.Paths.WarnedFile(), map[string]string{}); err == nil {
+		d.im.SetWarned(warned)
+	}
 	d.srv = ipc.NewServer(d.handle)
 	d.sup = d.supervise(boxName, d.prepareBox)
 	d.xsup = d.supervise(xrayName, d.prepareXray)
@@ -230,6 +268,7 @@ func (d *Daemon) supervise(name string, prepare func() (engine.Launch, func(cont
 			d.srv.Publish(proto.TopicLog, proto.LogLine{
 				T: time.Now().UTC(), Source: name, Level: engine.Level(line), Line: line,
 			})
+			d.onLine(name, line)
 		},
 	})
 }
@@ -249,8 +288,10 @@ func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 	served := make(chan error, 1)
 	go func() { served <- d.srv.Serve(l) }()
 	go d.pollEngine()
+	stopNetwork := d.watchNetwork()
 
 	d.loop(ctx)
+	stopNetwork()
 
 	// Let the last State (phase off) reach the clients before they are cut.
 	d.srv.Drain(500 * time.Millisecond)
@@ -258,7 +299,10 @@ func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 	d.srv.Close()
 	d.sup.Close()
 	d.xsup.Close()
-	d.journal.close()
+	if d.statsDirty {
+		d.saveStats(time.Now())
+	}
+	d.journal.Close()
 	return <-served
 }
 
@@ -276,7 +320,11 @@ func (d *Daemon) loop(ctx context.Context) {
 			d.beginStart()
 		}
 	}
+	d.checkSubs()
 	d.touch()
+
+	tick := time.NewTicker(d.opts.HealthTick)
+	defer tick.Stop()
 
 	// Subscriptions refresh by themselves. The first look comes soon after
 	// the start, so a daemon that was off for a day catches up.
@@ -310,6 +358,8 @@ func (d *Daemon) loop(ctx context.Context) {
 		case <-d.flush.C:
 			d.flushArmed = false
 			d.publish()
+		case <-tick.C:
+			d.tick()
 		case <-auto.C:
 			auto.Reset(time.Minute)
 			if stopping != nil {
@@ -379,6 +429,10 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		result, err = d.vpnRestart()
 	case proto.MethodEngineStatus:
 		result = d.engineStatus()
+	case proto.MethodJournalList:
+		result, err = d.journalList(c)
+	case proto.MethodIncidentAction:
+		result, err = d.incidentAction(c)
 	default:
 		return d.dispatchProfile(c)
 	}
@@ -414,6 +468,7 @@ func (d *Daemon) subscription(c rpcCall) (any, *proto.Error) {
 }
 
 func (d *Daemon) vpnStart() (any, *proto.Error) {
+	d.acted()
 	switch d.st.VPN.Phase {
 	case proto.PhaseStopping:
 		return nil, proto.Errorf(proto.CodeBusy, "VPN ещё выключается. Подожди пару секунд и попробуй снова.")
@@ -430,6 +485,7 @@ func (d *Daemon) vpnStart() (any, *proto.Error) {
 }
 
 func (d *Daemon) vpnStop() (any, *proto.Error) {
+	d.acted()
 	d.setDesired(proto.DesiredOff)
 	switch d.st.VPN.Phase {
 	case proto.PhaseOff, proto.PhaseStopping:
@@ -451,6 +507,7 @@ func (d *Daemon) vpnRestart() (any, *proto.Error) {
 	case proto.PhaseStopping:
 		return nil, proto.Errorf(proto.CodeBusy, "VPN ещё выключается. Подожди пару секунд и попробуй снова.")
 	}
+	d.acted()
 	d.log(proto.CatVPN, proto.LevelInfo, "Перезапускаю VPN.")
 	d.restartEngines()
 	return nil, nil
@@ -482,11 +539,14 @@ func (d *Daemon) stopEngines() {
 }
 
 func (d *Daemon) markStarting() {
-	d.everOn = false
+	d.everOn, d.toldOn = false, false
 	d.boxReady, d.xrayReady = false, false
 	d.live.Store(false)
+	d.feed(health.Helper{}) // a fresh start owes nothing to the helper's past
 	d.setPhase(proto.PhaseStarting)
 	d.setBusy(proto.BusyStarting)
+	// Only now: while the phase still said "failed", the reason was still
+	// what the open incident is worded with.
 	d.st.VPN.FailReason, d.st.VPN.FailText = nil, nil
 	d.touch()
 }
@@ -590,7 +650,14 @@ func (d *Daemon) onEngine(m engEvent) {
 			d.touch()
 			return
 		}
-		d.fail(ev.Reason, failText(ev.Reason))
+		reason := ev.Reason
+		if reason == engine.FailCrashLoop {
+			// The engine's last words often say why it keeps dying.
+			if why := health.FailReason(d.sup.Tail(40)); why != "" {
+				reason = why
+			}
+		}
+		d.fail(reason, failText(reason))
 	}
 }
 
@@ -608,7 +675,7 @@ func (d *Daemon) onXray(ev engine.Event) {
 		d.xrayReady = true
 		if phase == proto.PhaseOn {
 			d.log(proto.CatVPN, proto.LevelInfo, "Помощник Xray снова работает.")
-			d.setVerdict(proto.VerdictSettling)
+			d.feed(health.Helper{})
 			d.touch()
 			return
 		}
@@ -629,7 +696,7 @@ func (d *Daemon) onXray(ev engine.Event) {
 		}
 		d.log(proto.CatVPN, proto.LevelProblem, what)
 		if phase == proto.PhaseOn {
-			d.setVerdict(proto.VerdictHelperDown)
+			d.feed(health.Helper{Down: true})
 		}
 		d.touch()
 
@@ -654,7 +721,7 @@ func (d *Daemon) onXray(ev engine.Event) {
 			d.fail(ev.Reason, "Не запускается помощник Xray, через который работает часть серверов. Подробности — в журнале.")
 		case proto.PhaseOn, proto.PhaseRecovering:
 			d.log(proto.CatVPN, proto.LevelCritical, "Помощник Xray не запускается. Серверы, которые работают через него, недоступны.")
-			d.setVerdict(proto.VerdictHelperDown)
+			d.feed(health.Helper{Down: true, Gone: true})
 			d.touch()
 		}
 	}
@@ -681,12 +748,14 @@ func (d *Daemon) maybeOn() {
 	d.touch()
 }
 
+// fail ends a start that did not work out. The journal line and the toast
+// come from the incident this opens: the reason is in place before the
+// phase moves, so that the incident can word it.
 func (d *Daemon) fail(reason, text string) {
 	d.live.Store(false)
+	d.st.VPN.FailReason, d.st.VPN.FailText = &reason, &text
 	d.setPhase(proto.PhaseFailed)
 	d.setBusy("")
-	d.st.VPN.FailReason, d.st.VPN.FailText = &reason, &text
-	d.log(proto.CatVPN, proto.LevelCritical, "VPN не запускается. "+text)
 	d.touch()
 }
 
@@ -698,6 +767,10 @@ func failText(reason string) string {
 		return "Движок не принял настройки VPN. Подробности — в журнале."
 	case engine.FailCrashLoop:
 		return "VPN падает сразу после запуска. Подробности — в журнале."
+	case proto.FailTUN:
+		return "Не создаётся сетевой адаптер VPN. Обычно мешает другой включённый VPN или не хватает прав администратора."
+	case proto.FailPort:
+		return "Движку не достался нужный порт: его занимает другая программа."
 	}
 	return "Причина неизвестна. Подробности — в журнале."
 }
@@ -717,9 +790,8 @@ func lastLines(lines []string, n int) []string {
 	return lines
 }
 
-// setPhase moves the phase and the fields that are functions of it. Health
-// proper arrives in stage 03; until then the verdict only says what the
-// engines themselves are doing.
+// setPhase moves the phase and tells the health machine, which makes the
+// verdict out of it.
 func (d *Daemon) setPhase(phase string) {
 	if d.st.VPN.Phase == phase {
 		return
@@ -730,22 +802,11 @@ func (d *Daemon) setPhase(phase string) {
 	if phase == proto.PhaseOn {
 		d.st.VPN.Since = &now
 	}
-	verdict := proto.VerdictSettling
-	switch phase {
-	case proto.PhaseRecovering:
-		verdict = proto.VerdictEngineRecovering
-	case proto.PhaseFailed:
-		verdict = proto.VerdictEngineFailed
+	ev := health.Phase{Phase: phase}
+	if phase == proto.PhaseFailed && d.st.VPN.FailReason != nil {
+		ev.Reason = *d.st.VPN.FailReason
 	}
-	d.setVerdict(verdict)
-}
-
-func (d *Daemon) setVerdict(verdict string) {
-	if d.st.Health.Verdict != verdict {
-		now := time.Now().UTC().Truncate(time.Second)
-		d.st.Health.Verdict = verdict
-		d.st.Health.Since = &now
-	}
+	d.feed(ev)
 }
 
 // setBusy records what the phase is busy with; setJob, what a background
@@ -787,8 +848,11 @@ func (d *Daemon) setDesired(desired string) {
 	d.touch()
 }
 
-func (d *Daemon) log(cat, level, text string) {
-	e := d.journal.add(time.Now(), cat, level, text)
+func (d *Daemon) log(cat, level, text string) { d.logFor("", cat, level, text) }
+
+// logFor writes a journal entry that belongs to an incident.
+func (d *Daemon) logFor(incidentID, cat, level, text string) {
+	e := d.journal.Add(time.Now(), cat, level, text, incidentID)
 	d.srv.Publish(proto.TopicJournal, e)
 }
 
