@@ -23,13 +23,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
+	"strelka/internal/runx"
 	"strelka/internal/xray"
 	"strelka/proto"
 )
@@ -324,15 +324,7 @@ func CountAutoList(ctx context.Context, exe, srsPath string) (int, error) {
 }
 
 func run(ctx context.Context, limit time.Duration, exe, dir string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, args...)
-	// Engines are only ever run from the engines folder, by full path.
-	cmd.Path = exe
-	cmd.Err = nil
-	cmd.Dir = dir
-	hideWindow(cmd)
-	return cmd.CombinedOutput()
+	return runx.Output(ctx, limit, exe, dir, args...)
 }
 
 func lastLine(out []byte) string {

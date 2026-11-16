@@ -401,3 +401,29 @@ func connsCmd(ctx context.Context, c *ipc.Client) error {
 		}
 	}
 }
+
+func versionsCmd(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
+	var res proto.EngineVersionsResult
+	// The first answer runs both engines once; that is more than a moment.
+	if err := callLong(ctx, c, proto.MethodEngineVersions, nil, &res); err != nil {
+		return err
+	}
+	fmt.Printf("strelkad  %s (протокол %d, %s)\n", hello.Version, hello.Proto, hello.OS)
+	for _, e := range res.Engines {
+		v := "не найден"
+		if e.Version != nil {
+			v = *e.Version
+		}
+		fmt.Printf("%-9s %s\n", e.Name, v)
+	}
+	return nil
+}
+
+func reportCmd(ctx context.Context, c *ipc.Client) error {
+	var res proto.DiagExportResult
+	if err := callLong(ctx, c, proto.MethodDiagExport, nil, &res); err != nil {
+		return err
+	}
+	fmt.Println("Отчёт собран:", res.Path)
+	return nil
+}

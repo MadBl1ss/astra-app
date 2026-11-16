@@ -61,6 +61,8 @@ func usage() {
   rules apps             запущенные программы, которые можно добавить в правила
   set [ИМЯ=ЗНАЧЕНИЕ…]    настройки службы; без параметров — показать
   import-legacy ПАПКА    перенести подписки, правила и выбор из старой Стрелки
+  versions               версии службы и движков
+  report                 собрать отчёт для поддержки (архив логов без ключей)
 
   --pipe     имя канала; по умолчанию $STRELKA_PIPE или strelka-dev
   --no-wait  для start, stop, restart: не ждать, пока фаза сменится
@@ -153,6 +155,10 @@ func realMain(args []string) int {
 		err = journalCmd(ctx, c, rest)
 	case "action":
 		err = actionCmd(ctx, c, rest)
+	case "versions":
+		err = versionsCmd(ctx, c, hello)
+	case "report":
+		err = reportCmd(ctx, c)
 	}
 	if err != nil {
 		return fail(err)
