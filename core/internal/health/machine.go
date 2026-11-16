@@ -35,7 +35,8 @@ type (
 	// Phase is a change of vpn.phase; Reason comes with "failed".
 	Phase struct{ Phase, Reason string }
 	// Helper tells whether the Xray helper is down while the VPN is on.
-	Helper struct{ Down bool }
+	// Gone means the daemon has given up restarting it.
+	Helper struct{ Down, Gone bool }
 	// Network is the monitor's observation after a change: is there a
 	// default route at all.
 	Network struct{ Up bool }
@@ -152,6 +153,8 @@ type Machine struct {
 	phase      string
 	reason     string
 	helperDown bool
+	helperGone bool
+	helperAt   time.Time
 	server     string
 
 	netKnown bool
@@ -176,8 +179,8 @@ type Machine struct {
 	firstMiss time.Time
 	retry     int
 	retryDue  time.Time // when the last re-check was meant to leave
-	down      bool // the server is confirmed silent
-	oks       int  // answers in a row since it went down
+	down      bool      // the server is confirmed silent
+	oks       int       // answers in a row since it went down
 	lastRx    time.Time
 
 	direct fact
@@ -222,7 +225,10 @@ func (m *Machine) Step(now time.Time, ev Event) []Command {
 		}
 	case Helper:
 		back := m.helperDown && !e.Down
-		m.helperDown = e.Down
+		if e.Down && !m.helperDown {
+			m.helperAt = now
+		}
+		m.helperDown, m.helperGone = e.Down, e.Down && e.Gone
 		if e.Down {
 			m.clear()
 		} else if back && m.on() {
@@ -487,7 +493,11 @@ func (m *Machine) verdictNow(now time.Time) string {
 	}
 	switch {
 	case m.helperDown:
-		return proto.VerdictHelperDown
+		if m.helperGone || now.Sub(m.helperAt) >= m.t.HelperHold {
+			return proto.VerdictHelperDown
+		}
+		// It has only just fallen and is being started again.
+		return proto.VerdictEngineRecovering
 	case now.Before(m.settleUntil):
 		return proto.VerdictSettling
 	case m.networkGone():

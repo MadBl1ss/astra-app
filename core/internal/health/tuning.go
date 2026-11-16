@@ -60,6 +60,9 @@ type Tuning struct {
 	// NetDebounce merges the burst of adapter and route events one network
 	// change produces into a single observation.
 	NetDebounce time.Duration
+	// HelperHold: a crashed Xray helper is back within a second or two. Only
+	// one that stays down this long is worth a verdict of its own.
+	HelperHold time.Duration
 	// HintFresh is how long an error seen in an engine's log may explain an
 	// outage. Older lines are about some other moment.
 	HintFresh time.Duration
@@ -120,6 +123,7 @@ func Default() Tuning {
 		OthersFresh:    time.Minute,
 		SleepGap:       30 * time.Second,
 		NetDebounce:    time.Second,
+		HelperHold:     10 * time.Second,
 		HintFresh:      time.Minute,
 
 		Window:         20,
