@@ -457,7 +457,11 @@ func TestProblemThatOutlivesTheGraceWindowIsReported(t *testing.T) {
 	s.Send(health.Select{Server: "c-FI"})
 	s.Run(15 * time.Second)
 	if len(s.toasts) != 2 || s.toasts[1].Title != "Снова работает" || len(s.m.Incidents()) != 0 {
-		t.Errorf("после выбора живого сервера: %s", s.titles())
+		t.Fatalf("после выбора живого сервера: %s", s.titles())
+	}
+	// The dead server did not come back; the user went elsewhere.
+	if body := s.toasts[1].Body; !strings.HasPrefix(body, "VPN снова работает — через сервер Финляндия. Не работало") {
+		t.Errorf("окончание после переключения: %q", body)
 	}
 }
 
@@ -656,7 +660,7 @@ func TestEveryHintAndVerdictHasWords(t *testing.T) {
 				t.Errorf("%s (нестабильно=%v): заголовок %q, описание %q", v, unstable, title, body)
 			}
 		}
-		if end := endText(v, in.Server, false, time.Minute); end == "" || strings.HasPrefix(end, "Снова работает.") {
+		if end := endText(v, in.Server, in.Server, false, time.Minute); end == "" || strings.HasPrefix(end, "Снова работает.") {
 			t.Errorf("%s: у окончания нет своих слов: %q", v, end)
 		}
 		if len(actions(v, in)) == 0 {

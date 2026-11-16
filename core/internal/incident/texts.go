@@ -133,13 +133,19 @@ func reopenText(title string, flaps int) string {
 }
 
 // endText is the journal line, and the toast body, of an incident's end.
-func endText(kind string, server Named, unstable bool, lasted time.Duration) string {
+// server is the one the incident was about, now the one in use at its end:
+// when they differ the trouble ended because somebody switched, and saying
+// that the old server "answers again" would be a lie.
+func endText(kind string, server, now Named, unstable bool, lasted time.Duration) string {
 	d := span(lasted)
 	if unstable {
 		return fmt.Sprintf("Соединение снова стабильно. Нестабильно было %s.", d)
 	}
 	switch kind {
 	case proto.VerdictServerDown:
+		if now.ID != "" && now.ID != server.ID {
+			return fmt.Sprintf("VPN снова работает — через сервер %s. Не работало %s.", now.title(), d)
+		}
 		return fmt.Sprintf("Сервер %s снова отвечает. Не работало %s.", server.title(), d)
 	case proto.VerdictAllServersDown:
 		return fmt.Sprintf("Серверы снова отвечают. Не работало %s.", d)

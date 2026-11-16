@@ -342,7 +342,7 @@ func (m *Manager) end(now time.Time, in Input, out *Output, moot bool) {
 		// What comes after the user switched the VPN back on is a new story.
 		return
 	}
-	text := endText(e.kind, e.server, e.unstable, now.Sub(e.since))
+	text := endText(e.kind, e.server, in.Server, e.unstable, now.Sub(e.since))
 	out.Journal = append(out.Journal, Entry{Cat: category(e.kind), Level: proto.LevelInfo, Text: text, Incident: e.id})
 	// The end is told only to those who were told the beginning.
 	if e.notified && !e.quietEnd && in.Level != proto.NotifySilent {

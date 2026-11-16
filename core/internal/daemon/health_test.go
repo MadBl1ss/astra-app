@@ -187,7 +187,8 @@ func TestDeadServerIsDiagnosedReportedAndEnds(t *testing.T) {
 		t.Errorf("после переключения: %+v", st.Server)
 	}
 	if len(r.toasts) != 2 || r.toasts[1].ID != inc.ID || r.toasts[1].Title != "Снова работает" ||
-		!strings.Contains(r.toasts[1].Body, "Не работало") || r.toasts[1].Severity != proto.SeverityInfo {
+		!strings.HasPrefix(r.toasts[1].Body, "VPN снова работает — через сервер Netherlands. Не работало") ||
+		r.toasts[1].Severity != proto.SeverityInfo {
 		t.Errorf("уведомления после переключения: %s (%+v)", r.toastTitles(), r.toasts)
 	}
 
