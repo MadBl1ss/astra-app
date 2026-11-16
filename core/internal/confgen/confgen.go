@@ -45,6 +45,11 @@ const (
 
 	// SelectorTag is the one group every routed connection goes through.
 	SelectorTag = "proxy"
+	// DirectTag is the outbound that leaves past the VPN.
+	DirectTag = "direct"
+	// TUNName is the adapter the engine creates. The network monitor must
+	// not take its routes for a way out.
+	TUNName = "Strelka"
 	// DevProxyPort is the local proxy of a daemon run without TUN.
 	DevProxyPort = 20808
 )

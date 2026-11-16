@@ -233,11 +233,37 @@ const (
 	CatServer = "server"
 	CatSubs   = "subs"
 	CatRules  = "rules"
+	CatGuard  = "guard"
 	CatSystem = "system"
 
 	LevelInfo     = "info"
 	LevelProblem  = "problem"
 	LevelCritical = "critical"
+)
+
+// Incident kinds. The first four repeat the verdict they grew out of.
+const (
+	IncidentServerDown     = VerdictServerDown
+	IncidentAllServersDown = VerdictAllServersDown
+	IncidentEngineFailed   = VerdictEngineFailed
+	IncidentHelperDown     = VerdictHelperDown
+	IncidentSubExpiring    = "sub_expiring" // the subscription ends within three days
+	IncidentSubExpired     = "sub_expired"
+	IncidentSubTraffic     = "sub_traffic" // the traffic allowance is used up
+)
+
+// Severities of incidents and toasts.
+const (
+	SeverityCritical = "critical"
+	SeverityProblem  = "problem"
+	SeverityInfo     = "info"
+)
+
+// Values of settings.notify.
+const (
+	NotifyAll       = "all"
+	NotifyImportant = "important"
+	NotifySilent    = "silent"
 )
 
 // LogLine is one line of an engine's or the daemon's own log.

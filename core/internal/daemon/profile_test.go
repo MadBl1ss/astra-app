@@ -29,10 +29,13 @@ type subServer struct {
 	status int
 	hwid   string // the x-hwid of the last request
 	hits   int
+	// info is the subscription-userinfo header; the default is a plan with
+	// years to go and traffic to spare.
+	info string
 }
 
 func newSubServer(t *testing.T, links ...string) *subServer {
-	s := &subServer{links: links}
+	s := &subServer{links: links, info: "upload=1; download=2; total=100; expire=1893456000"}
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -42,7 +45,7 @@ func newSubServer(t *testing.T, links ...string) *subServer {
 			w.WriteHeader(s.status)
 			return
 		}
-		w.Header().Set("subscription-userinfo", "upload=1; download=2; total=100; expire=1893456000")
+		w.Header().Set("subscription-userinfo", s.info)
 		fmt.Fprint(w, strings.Join(s.links, "\n"))
 	}))
 	t.Cleanup(s.Close)
@@ -56,6 +59,12 @@ func (s *subServer) set(status int, links ...string) {
 	if links != nil {
 		s.links = links
 	}
+}
+
+func (s *subServer) setInfo(info string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.info = info
 }
 
 func (s *subServer) lastHWID() string {
@@ -397,7 +406,7 @@ func TestServerTestFillsPingsAndStats(t *testing.T) {
 		return st.Busy == nil && len(st.Servers) == 2 && st.Servers[0].PingAt != nil && st.Servers[1].PingAt != nil
 	})
 	de, dead := r.last.Servers[0], r.last.Servers[1]
-	if !de.Alive || de.Ping == nil || *de.Ping != enginetest.DelayOf("a-DE") || de.Stats == nil || de.Stats.Samples != 1 {
+	if !de.Alive || de.Ping == nil || *de.Ping != enginetest.DelayOf("a-DE") || de.Stats == nil || de.Stats.Samples < 1 { // the health probe of the server in use counts too
 		t.Errorf("живой сервер: %+v stats=%+v", de, de.Stats)
 	}
 	if dead.Alive || dead.Ping != nil || dead.Stats == nil || dead.Stats.Loss <= 0 {

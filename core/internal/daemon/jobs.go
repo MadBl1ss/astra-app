@@ -13,6 +13,7 @@ import (
 
 	"strelka/internal/clash"
 	"strelka/internal/confgen"
+	"strelka/internal/incident"
 	"strelka/internal/procs"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
@@ -57,6 +58,9 @@ func (j *subsJob) answer(result any, err *proto.Error) {
 		j.reply(result, err)
 	}
 }
+
+// byUser tells a job somebody asked for from the timer's own.
+func (j *subsJob) byUser() bool { return j.reply != nil }
 
 func later(c rpcCall) func(any, *proto.Error) {
 	return func(result any, err *proto.Error) { c.reply <- rpcReply{result: result, err: err} }
@@ -128,6 +132,9 @@ func (d *Daemon) startSubsJob(j *subsJob) {
 	if !profile.ValidHWID(d.prof.HWID) {
 		d.prof.EnsureHWID()
 		d.saveProfile()
+	}
+	if j.byUser() {
+		d.acted()
 	}
 	d.setJob(proto.BusyUpdatingSubs)
 	cand := d.prof.Clone()
@@ -300,7 +307,14 @@ func (d *Daemon) adoptSubs(j *subsJob, res subsResult) {
 		d.replan()
 		d.touch()
 	} else {
+		if j.byUser() {
+			d.acted() // the engines restart on the new list
+		}
 		d.afterServersChanged("изменился список серверов")
+	}
+	d.checkSubs()
+	if !j.byUser() && failed < len(res.outcomes) {
+		d.toast(d.im.Notice(d.st.Settings.Notify, incident.SubsRefreshed(len(d.prof.Servers)))...)
 	}
 
 	switch {
@@ -414,9 +428,7 @@ func (d *Daemon) adoptTest(started time.Time, pool []string, px map[string]clash
 		}
 	}
 	if d.stats.Round(started.Add(-time.Second), now, pool, px) {
-		if err := d.stats.Save(d.opts.Paths.StatsFile(), now); err != nil {
-			d.opts.Logf("saving the stats: %v", err)
-		}
+		d.saveStats(now)
 	}
 	d.log(proto.CatServer, proto.LevelInfo, fmt.Sprintf("Проверка серверов: отвечают %d из %d.", alive, len(pool)))
 	d.refresh()

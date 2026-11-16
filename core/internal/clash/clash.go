@@ -192,12 +192,19 @@ func (cl *Client) Traffic(ctx context.Context) (Connections, error) {
 // Delay tests one server right now. It is not a passive read: a failure
 // makes the core forget the server's last result.
 func (cl *Client) Delay(ctx context.Context, tag string) (int, error) {
+	return cl.DelayURL(ctx, tag, PingURL, ProbeTimeout)
+}
+
+// DelayURL is Delay with the address to fetch and the time to wait chosen
+// by the caller. It works for any outbound, "direct" included: that is how
+// the daemon asks whether there is internet past the VPN.
+func (cl *Client) DelayURL(ctx context.Context, tag, target string, timeout time.Duration) (int, error) {
 	var r struct {
 		Delay int `json:"delay"`
 	}
 	p := fmt.Sprintf("/proxies/%s/delay?timeout=%d&url=%s",
-		url.PathEscape(tag), ProbeTimeout.Milliseconds(), url.QueryEscape(PingURL))
-	err := cl.do(ctx, ProbeTimeout+5*time.Second, "GET", p, nil, &r)
+		url.PathEscape(tag), timeout.Milliseconds(), url.QueryEscape(target))
+	err := cl.do(ctx, timeout+5*time.Second, "GET", p, nil, &r)
 	return r.Delay, err
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"strelka/internal/confgen"
+	"strelka/internal/health"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
 	"strelka/internal/store"
@@ -162,6 +163,11 @@ func (d *Daemon) refresh() {
 			d.st.Server.Ping, d.st.Server.PingAt = &ms, &at
 		}
 	}
+	// Last, when State is whole again: the machine may answer at once.
+	if d.prof.Selected != d.hserver {
+		d.hserver = d.prof.Selected
+		d.feed(health.Select{Server: d.hserver})
+	}
 }
 
 // serverName is how a server is called in the journal.
@@ -203,6 +209,7 @@ func (d *Daemon) modeSet(c rpcCall) (any, *proto.Error) {
 	if d.prof.Mode == p.Mode {
 		return nil, nil
 	}
+	d.acted() // open connections are about to be cut
 	d.prof.Mode = p.Mode
 	d.saveProfile()
 	d.replan()
@@ -230,20 +237,32 @@ func (d *Daemon) serverSelect(c rpcCall) (any, *proto.Error) {
 	if err := params(c, &p); err != nil {
 		return nil, err
 	}
-	if err := d.prof.Select(p.ID); err != nil {
-		return nil, profileError(err, "Нет такого сервера.")
+	if err := d.selectServer(p.ID, true); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+// selectServer points the selector at a server. byUser tells a choice made
+// by hand from the fallback the daemon picks itself.
+func (d *Daemon) selectServer(id string, byUser bool) *proto.Error {
+	if err := d.prof.Select(id); err != nil {
+		return profileError(err, "Нет такого сервера.")
+	}
+	if byUser {
+		d.acted()
+		d.log(proto.CatServer, proto.LevelInfo, "Выбран сервер "+d.serverName(id)+".")
 	}
 	d.saveProfile()
 	d.replan()
 	d.refresh()
-	d.log(proto.CatServer, proto.LevelInfo, "Выбран сервер "+d.serverName(p.ID)+".")
 	api := d.api.Load()
 	// The selector interrupts the connections of the old server itself.
 	d.engineDo("выбор сервера", func(ctx context.Context) error {
-		return api.SwitchTo(ctx, confgen.SelectorTag, p.ID)
+		return api.SwitchTo(ctx, confgen.SelectorTag, id)
 	})
 	d.touch()
-	return nil, nil
+	return nil
 }
 
 func (d *Daemon) serverFavorite(c rpcCall) (any, *proto.Error) {
@@ -286,6 +305,7 @@ func (d *Daemon) serverRemove(c rpcCall) (any, *proto.Error) {
 	if err := d.prof.RemoveServer(p.ID); err != nil {
 		return nil, profileError(err, "Нет такого сервера.")
 	}
+	d.acted()
 	d.log(proto.CatServer, proto.LevelInfo, "Сервер "+name+" удалён.")
 	d.afterServersChanged("изменился список серверов")
 	return nil, nil
@@ -321,9 +341,11 @@ func (d *Daemon) subsRemove(c rpcCall) (any, *proto.Error) {
 		return nil, proto.Errorf(proto.CodeNotFound, "Нет такой подписки.")
 	}
 	name := sub.Name
+	d.acted()
 	d.prof.RemoveSub(p.ID)
 	d.log(proto.CatSubs, proto.LevelInfo, "Подписка «"+name+"» удалена вместе с серверами.")
 	d.afterServersChanged("изменился список серверов")
+	d.checkSubs()
 	return nil, nil
 }
 
@@ -491,6 +513,7 @@ func (d *Daemon) settingsSet(c rpcCall) (any, *proto.Error) {
 	}
 	// These two are baked into the engine's config.
 	if next.IPv6 != prev.IPv6 || next.LocalProxyPort != prev.LocalProxyPort {
+		d.acted()
 		d.applyPlanChange("изменились настройки сети")
 	}
 	d.touch()

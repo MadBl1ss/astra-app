@@ -3,6 +3,7 @@
 //
 //	strelkactl [--pipe NAME] status | start | stop | restart | watch | call <method> [json]
 //	strelkactl subs | servers | select | test | mode | rules | set | import-legacy
+//	strelkactl journal | action
 package main
 
 import (
@@ -32,7 +33,12 @@ func usage() {
   status                 состояние VPN и движка
   start | stop           включить или выключить VPN и дождаться результата
   restart                перезапустить движок
-  watch [--log] [--json] поток состояния и журнала; --log добавляет лог движка
+  watch [--log] [--json] поток состояния, диагнозов, журнала и уведомлений;
+                         --log добавляет лог движка
+  journal [-n ЧИСЛО] [--problems] [--incident НОМЕР]
+                         журнал, свежие записи внизу; --problems — только проблемы
+  action ДЕЙСТВИЕ [НОМЕР]
+                         нажать кнопку уведомления: switch:СЕРВЕР, retry, update_subs
   call МЕТОД [JSON]      вызвать любой метод службы и напечатать ответ
 
   subs [list]            подписки
@@ -81,7 +87,8 @@ func realMain(args []string) int {
 	cmd, rest := rest[0], rest[1:]
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
-		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy":
+		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy",
+		"journal", "action":
 	case "help":
 		usage()
 		return 0
@@ -142,6 +149,10 @@ func realMain(args []string) int {
 		err = setCmd(ctx, c, rest)
 	case "import-legacy":
 		err = importLegacy(ctx, c, rest)
+	case "journal":
+		err = journalCmd(ctx, c, rest)
+	case "action":
+		err = actionCmd(ctx, c, rest)
 	}
 	if err != nil {
 		return fail(err)
@@ -209,6 +220,10 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 		}
 	}
 	fmt.Printf("Сервер:  %s (всего серверов: %d, подписок: %d)\n", server, len(st.Servers), len(st.Subs))
+	fmt.Printf("Диагноз: %s\n", healthLine(st.Health))
+	for _, inc := range st.Incidents {
+		fmt.Printf("Инцидент %s [%s]: %s. %s\n", inc.ID, inc.Severity, inc.Title, inc.Body)
+	}
 	for _, e := range es.Engines {
 		if e.Running {
 			since := ""
@@ -308,7 +323,7 @@ func watch(ctx context.Context, c *ipc.Client, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return nil
 	}
-	topics := []string{proto.TopicState, proto.TopicJournal}
+	topics := []string{proto.TopicState, proto.TopicJournal, proto.TopicToast}
 	if *withLog {
 		topics = append(topics, proto.TopicLog)
 	}
@@ -332,6 +347,42 @@ func watch(ctx context.Context, c *ipc.Client, args []string) error {
 	}
 }
 
+var verdictText = map[string]string{
+	proto.VerdictOK:               "защищено",
+	proto.VerdictSettling:         "подключение",
+	proto.VerdictDegraded:         "соединение нестабильно",
+	proto.VerdictServerDown:       "сервер не отвечает",
+	proto.VerdictAllServersDown:   "серверы не отвечают",
+	proto.VerdictNoInternet:       "нет интернета",
+	proto.VerdictNoNetwork:        "нет сети",
+	proto.VerdictEngineRecovering: "перезапуск",
+	proto.VerdictEngineFailed:     "VPN не запускается",
+	proto.VerdictHelperDown:       "часть серверов недоступна",
+}
+
+func healthLine(h proto.Health) string {
+	line := fmt.Sprintf("%s (%s), сеть: %s, интернет: %s", verdictText[h.Verdict], h.Verdict, yesNo(h.Network), yesNo(h.Internet))
+	if h.Hint != nil {
+		line += ". " + *h.Hint
+	}
+	return line
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "есть"
+	}
+	return "нет"
+}
+
+// watchSeen is what watch printed last, so that a diagnosis or an incident
+// gets a line of its own only when it changes: State arrives for every
+// traffic counter too.
+var watchSeen struct {
+	health    string
+	incidents string
+}
+
 func printNotification(n ipc.Notification) {
 	now := time.Now().Format("15:04:05.000")
 	switch n.Method {
@@ -340,18 +391,57 @@ func printNotification(n ipc.Notification) {
 		if json.Unmarshal(n.Params, &st) != nil {
 			return
 		}
-		line := fmt.Sprintf("%s  состояние  rev %-4d phase=%-10s desired=%-3s busy=%s",
-			now, st.Rev, st.VPN.Phase, st.VPN.Desired, deref(st.Busy))
+		line := fmt.Sprintf("%s  состояние  rev %-4d phase=%-10s desired=%-3s busy=%s verdict=%s",
+			now, st.Rev, st.VPN.Phase, st.VPN.Desired, deref(st.Busy), st.Health.Verdict)
 		if st.VPN.FailReason != nil {
 			line += " fail=" + *st.VPN.FailReason
 		}
 		fmt.Println(line)
+		if h := healthLine(st.Health); h != watchSeen.health {
+			watchSeen.health = h
+			fmt.Printf("%s  диагноз    %s\n", now, h)
+		}
+		var open []string
+		for _, inc := range st.Incidents {
+			mark := ""
+			if inc.Unstable {
+				mark = ", нестабильно"
+			}
+			open = append(open, fmt.Sprintf("%s [%s%s, повторов %d] %s. %s", inc.ID, inc.Severity, mark, inc.Flaps, inc.Title, inc.Body))
+		}
+		if list := strings.Join(open, "\n"); list != watchSeen.incidents {
+			watchSeen.incidents = list
+			if len(open) == 0 {
+				fmt.Printf("%s  инциденты  открытых нет\n", now)
+			}
+			for _, o := range open {
+				fmt.Printf("%s  инцидент   %s\n", now, o)
+			}
+		}
+	case proto.TopicToast:
+		var t proto.Toast
+		if json.Unmarshal(n.Params, &t) != nil {
+			return
+		}
+		if t.Close {
+			fmt.Printf("%s  УВЕДОМЛЕНИЕ %s: убрать с экрана\n", now, t.ID)
+			return
+		}
+		var buttons []string
+		for _, a := range t.Actions {
+			buttons = append(buttons, fmt.Sprintf("[%s → %s]", a.Label, a.ID))
+		}
+		sticky := ""
+		if t.Sticky {
+			sticky = ", не прячется само"
+		}
+		fmt.Printf("%s  УВЕДОМЛЕНИЕ %s (%s%s): %s. %s %s\n", now, t.ID, t.Severity, sticky, t.Title, t.Body, strings.Join(buttons, " "))
 	case proto.TopicJournal:
 		var e proto.JournalEntry
 		if json.Unmarshal(n.Params, &e) != nil {
 			return
 		}
-		fmt.Printf("%s  журнал     [%s/%s] %s\n", now, e.Cat, e.Level, e.Text)
+		fmt.Printf("%s  журнал     [%s/%s] %s%s\n", now, e.Cat, e.Level, e.Text, incidentMark(e))
 	case proto.TopicLog:
 		var l proto.LogLine
 		if json.Unmarshal(n.Params, &l) != nil {
@@ -385,5 +475,62 @@ func rawCall(ctx context.Context, c *ipc.Client, args []string) error {
 	}
 	out, _ := json.MarshalIndent(pretty, "", "  ")
 	fmt.Println(string(out))
+	return nil
+}
+
+func incidentMark(e proto.JournalEntry) string {
+	if e.Incident == nil {
+		return ""
+	}
+	return "  (" + *e.Incident + ")"
+}
+
+func journalCmd(ctx context.Context, c *ipc.Client, args []string) error {
+	fs := flag.NewFlagSet("journal", flag.ContinueOnError)
+	fs.Usage = usage
+	n := fs.Int("n", 50, "")
+	problems := fs.Bool("problems", false, "")
+	incident := fs.String("incident", "", "")
+	if err := fs.Parse(args); err != nil {
+		return nil
+	}
+	p := proto.JournalListParams{Limit: *n}
+	if *problems || *incident != "" {
+		p.Filter = &proto.JournalFilter{Incident: *incident}
+		if *problems {
+			p.Filter.Levels = []string{proto.LevelProblem, proto.LevelCritical}
+		}
+	}
+	var res proto.JournalListResult
+	if err := call(ctx, c, proto.MethodJournalList, p, &res); err != nil {
+		return err
+	}
+	if len(res.Entries) == 0 {
+		fmt.Println("Записей нет.")
+		return nil
+	}
+	if res.More {
+		fmt.Printf("… более старые записи не показаны (-n %d)\n", *n)
+	}
+	// The daemon answers newest first; a console reads better the other way.
+	for i := len(res.Entries) - 1; i >= 0; i-- {
+		e := res.Entries[i]
+		fmt.Printf("%s  [%s/%s] %s%s\n", e.T.Local().Format("02.01 15:04:05"), e.Cat, e.Level, e.Text, incidentMark(e))
+	}
+	return nil
+}
+
+func actionCmd(ctx context.Context, c *ipc.Client, args []string) error {
+	if len(args) == 0 || len(args) > 2 {
+		return errors.New("нужно действие и, если есть, номер инцидента: strelkactl action switch:nl-1 i-20261116-2")
+	}
+	p := proto.IncidentActionParams{Action: args[0]}
+	if len(args) == 2 {
+		p.ID = args[1]
+	}
+	if err := call(ctx, c, proto.MethodIncidentAction, p, nil); err != nil {
+		return err
+	}
+	fmt.Println("Принято.")
 	return nil
 }
