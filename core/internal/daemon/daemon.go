@@ -162,7 +162,8 @@ type Daemon struct {
 	subsChecked time.Time
 	statsDirty  bool
 	statsSaved  time.Time
-	hints       hintGate // shared with the supervisors' goroutines
+	hints       hintGate               // shared with the supervisors' goroutines
+	held        map[string]proto.Toast // toasts waiting for somebody to show them
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.
@@ -187,6 +188,7 @@ func New(opts Options) (*Daemon, error) {
 		pings:    map[string]ping{},
 		autoInfo: map[string]autoListInfo{},
 		tune:     health.Default(),
+		held:     map[string]proto.Toast{},
 	}
 	if opts.Health != nil {
 		d.tune = *opts.Health
@@ -457,6 +459,9 @@ func (d *Daemon) subscription(c rpcCall) (any, *proto.Error) {
 	}
 	c.conn.Subscribe(p.Topics...)
 	for _, t := range p.Topics {
+		if t == proto.TopicToast {
+			d.deliverHeld(c.conn)
+		}
 		if t == proto.TopicState {
 			// The current document right away, from the loop: a client
 			// never sits on a stale state waiting for the next change, and

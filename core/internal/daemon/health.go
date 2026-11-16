@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"strelka/internal/confgen"
 	"strelka/internal/health"
 	"strelka/internal/incident"
+	"strelka/internal/ipc"
 	"strelka/internal/netmon"
 	"strelka/internal/store"
 	"strelka/proto"
@@ -195,13 +197,45 @@ func (d *Daemon) emit(out incident.Output) {
 	}
 }
 
+// toast sends notifications to whoever shows them. The daemon starts with
+// the machine and the application with the user's session, so there may be
+// nobody yet: a toast about a problem then waits for the first listener
+// instead of being said to an empty room.
 func (d *Daemon) toast(list ...proto.Toast) {
 	for _, t := range list {
 		if t.Actions == nil {
 			t.Actions = []proto.ToastAction{}
 		}
-		d.srv.Publish(proto.TopicToast, t)
+		if d.srv.Subscribers(proto.TopicToast) > 0 {
+			delete(d.held, t.ID)
+			d.srv.Publish(proto.TopicToast, t)
+			continue
+		}
+		_, waiting := d.held[t.ID]
+		switch {
+		case strings.HasPrefix(t.ID, "e-"):
+			// Plain news ("подключён") is stale by the time anyone comes.
+		case t.Close, waiting && t.Severity == proto.SeverityInfo:
+			// The problem came and went unseen; the journal has it.
+			delete(d.held, t.ID)
+		default:
+			d.held[t.ID] = t
+		}
 	}
+}
+
+// deliverHeld gives a client that has just subscribed to toasts the ones
+// that were waiting for a listener.
+func (d *Daemon) deliverHeld(c *ipc.Conn) {
+	ids := make([]string, 0, len(d.held))
+	for id := range d.held {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		c.Notify(proto.TopicToast, d.held[id])
+	}
+	d.held = map[string]proto.Toast{}
 }
 
 // checkSubs looks at the subscriptions' terms and traffic.

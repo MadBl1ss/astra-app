@@ -398,6 +398,44 @@ func TestEngineThatWillNotStartIsACriticalIncident(t *testing.T) {
 	}
 }
 
+// The daemon runs before anyone is logged in. A problem it found then is
+// told to the first client that comes to listen; one that has passed is not.
+func TestToastWaitsForSomeoneToShowIt(t *testing.T) {
+	r := startRigWith(t, newData(t), "ok", quickHealth)
+	r.call(proto.MethodStateUnsubscribe, proto.TopicsParams{Topics: []string{proto.TopicToast}}, nil)
+	r.call(proto.MethodVPNStart, nil, nil)
+	r.waitPhase(proto.PhaseOn)
+	r.waitVerdict(proto.VerdictOK)
+
+	// One problem that comes and goes with nobody listening...
+	r.answers("t-DE", "fail")
+	r.waitState("инцидент", func(st proto.State) bool { return len(st.Incidents) == 1 })
+	r.answers("t-DE", "ok")
+	r.waitState("инцидент закрыт", func(st proto.State) bool { return len(st.Incidents) == 0 })
+	// ...and one that is still there.
+	r.answers("t-NL", "fail")
+	r.answers("t-DE", "fail")
+	r.waitState("второй инцидент", func(st proto.State) bool {
+		return len(st.Incidents) == 1 && st.Incidents[0].Kind == proto.IncidentAllServersDown
+	})
+	r.settle(200 * time.Millisecond)
+	if len(r.toasts) != 0 {
+		t.Fatalf("уведомления пришли без подписки: %s", r.toastTitles())
+	}
+
+	r.call(proto.MethodStateSubscribe, proto.TopicsParams{Topics: []string{proto.TopicToast}}, nil)
+	r.settle(200 * time.Millisecond)
+	if len(r.toasts) != 1 || r.toasts[0].ID != r.last.Incidents[0].ID || r.toasts[0].Title != "Серверы не отвечают" {
+		t.Fatalf("первому слушателю: %s, жду одно — о проблеме, которая ещё длится", r.toastTitles())
+	}
+	// Told once: subscribing again brings nothing.
+	r.call(proto.MethodStateSubscribe, proto.TopicsParams{Topics: []string{proto.TopicToast}}, nil)
+	r.settle(200 * time.Millisecond)
+	if len(r.toasts) != 1 {
+		t.Errorf("повторная подписка повторила уведомление: %s", r.toastTitles())
+	}
+}
+
 func TestIncidentActionErrorsAndJournalPaging(t *testing.T) {
 	r := startHealthy(t)
 	act := func(action string) error {
