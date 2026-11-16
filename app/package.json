@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
-    "@tauri-apps/plugin-autostart": "^2.7.0"
+    "@tauri-apps/plugin-autostart": "^2.7.0",
+    "@tauri-apps/plugin-opener": "^2.7.3"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

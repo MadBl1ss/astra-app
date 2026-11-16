@@ -3,6 +3,9 @@
 
   export type Section = 'home' | 'servers' | 'rules' | 'journal' | 'settings';
 
+  /** In the order of the column: Ctrl+1 is the first. */
+  export const SECTIONS: readonly Section[] = ['home', 'servers', 'rules', 'journal', 'settings'];
+
   const top: readonly { id: Section; icon: IconName }[] = [
     { id: 'home', icon: 'home' },
     { id: 'servers', icon: 'servers' },
@@ -19,7 +22,13 @@
 </script>
 
 {#snippet item(id: Section, icon: IconName)}
-  <button type="button" aria-current={section === id ? 'page' : undefined} onclick={() => onselect(id)}>
+  <button
+    type="button"
+    aria-current={section === id ? 'page' : undefined}
+    aria-keyshortcuts="Control+{SECTIONS.indexOf(id) + 1}"
+    title="{ru.nav[id]} (Ctrl+{SECTIONS.indexOf(id) + 1})"
+    onclick={() => onselect(id)}
+  >
     <Icon name={icon} />
     {ru.nav[id]}
   </button>

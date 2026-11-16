@@ -28,6 +28,8 @@ fn main() {
             MacosLauncher::LaunchAgent,
             Some(vec![HIDDEN_FLAG]),
         ))
+        // Shows the report for support in the file manager.
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tray::remembered())
