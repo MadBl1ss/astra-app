@@ -338,3 +338,25 @@ type ToastAction struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 }
+
+// Methods added with the screens of the window.
+const (
+	MethodEngineVersions = "engine.versions"
+	MethodDiagExport     = "diag.export"
+)
+
+// EngineVersionsResult names the versions of both engines in the engines
+// folder, whether or not they are running.
+type EngineVersionsResult struct {
+	Engines []EngineVersion `json:"engines"`
+}
+
+type EngineVersion struct {
+	Name    string  `json:"name"`    // sing-box | xray
+	Version *string `json:"version"` // null: no such file, or it did not say
+}
+
+// DiagExportResult is where the report archive was written.
+type DiagExportResult struct {
+	Path string `json:"path"`
+}

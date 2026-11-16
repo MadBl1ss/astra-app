@@ -42,6 +42,8 @@ class Daemon {
   journal = $state.raw<JournalEntry[]>([]);
   /** Per-path speeds, known only while somebody watches connections. */
   rates = $state.raw<Rates | null>(null);
+  /** The open connections, once a second while somebody watches them. */
+  connections = $state.raw<Connection[] | null>(null);
   /** A short message about a failed action; clears itself. */
   notice = $state<string | null>(null);
   /** A clock for "has been on for…" lines; frozen by `?still`. */
@@ -107,6 +109,20 @@ class Daemon {
   }
 
   /**
+   * Calls the daemon and leaves a refusal to the caller: a dialog shows it
+   * under its field, a setting next to its switch. Whatever the failure, it
+   * comes out as an RpcError with a text fit for the user.
+   */
+  async call<M extends MethodName>(method: M, params?: Methods[M]['params']): Promise<Methods[M]['result']> {
+    try {
+      return await this.#transport!.call(method, params);
+    } catch (err) {
+      if (err instanceof RpcError) throw err;
+      throw new RpcError(0, ru.errors.link);
+    }
+  }
+
+  /**
    * Calls the daemon. A refusal becomes a notice on screen and `undefined`
    * here, so that callers need no error handling of their own.
    */
@@ -162,6 +178,11 @@ class Daemon {
 
   // ---- per-path speeds ----
 
+  /** Says something to the user in the strip at the bottom of the window. */
+  say(text: string): void {
+    this.#say(text);
+  }
+
   /**
    * Asks for the list of connections while somebody is looking at speeds.
    * The list is the only place where traffic is split by path, and it is a
@@ -185,11 +206,13 @@ class Daemon {
 
   #forgetRates(): void {
     this.rates = null;
+    this.connections = null;
     this.#seen = null;
   }
 
   /** Turns two consecutive lists of byte counters into bytes per second. */
   #measure(list: Connection[]): void {
+    this.connections = list;
     const at = performance.now();
     const seen = new Map<string, { up: number; down: number }>();
     const rates: Rates = { vpn: { conns: 0, up: 0, down: 0 }, direct: { conns: 0, up: 0, down: 0 } };

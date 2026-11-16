@@ -46,3 +46,60 @@ export function since(iso: string | null, now: number): number {
   const t = Date.parse(iso);
   return Number.isNaN(t) ? 0 : Math.max(0, now - t);
 }
+
+const tm = ru.time;
+
+/** How long ago, in one unit: "только что", "14 мин назад", "3 дня назад". */
+export function ago(iso: string | null, now: number): string {
+  if (!iso) return '';
+  const ms = since(iso, now);
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return tm.now;
+  if (minutes < 60) return tm.minutesAgo(minutes);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return tm.hoursAgo(hours);
+  const days = Math.floor(hours / 24);
+  if (days < 30) return tm.daysAgo(days);
+  return dayMonth(iso, now);
+}
+
+/** "1 декабря"; the year only when it is not this one. */
+export function dayMonth(iso: string, now: number): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const text = `${d.getDate()} ${tm.months[d.getMonth()]}`;
+  return d.getFullYear() === new Date(now).getFullYear() ? text : `${text} ${d.getFullYear()}`;
+}
+
+/** The local calendar day of a time, as a key: "2026-11-16". */
+export function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** A day heading: "Сегодня", "Вчера", "12 ноября". */
+export function dayTitle(iso: string, now: number): string {
+  const key = dayKey(iso);
+  if (key === dayKey(new Date(now).toISOString())) return ru.journal.today;
+  if (key === dayKey(new Date(now - 86_400_000).toISOString())) return ru.journal.yesterday;
+  return dayMonth(iso, now);
+}
+
+/** An amount of data: "512 МБ", "1,5 ГБ", "100 ГБ". */
+export function bytes(n: number): string {
+  let value = Math.max(0, n);
+  let unit = 0;
+  while (value >= 1024 && unit < tm.bytes.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const digits = unit === 0 || value >= 10 ? 0 : 1;
+  return `${decimal(value, digits).replace(/,0$/, '')} ${tm.bytes[unit]}`;
+}
+
+/** A large count with thin spaces: "18 432". */
+export function count(n: number): string {
+  return Math.round(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package confgen
+package runx
 
 import "os/exec"
 

@@ -5,10 +5,14 @@ import {
   type Incident,
   type JournalCat,
   type JournalEntry,
+  type JournalFilter,
   type MethodName,
   type Methods,
   type NotificationName,
   type Notifications,
+  type RuleKind,
+  type RuleListName,
+  type Rules,
   type Server,
   type Settings,
   type Severity,
@@ -16,6 +20,19 @@ import {
   type Topic,
 } from '../proto';
 import { mock as text } from '../i18n/ru';
+import {
+  ConnectionMaker,
+  KEY,
+  MANY,
+  PROCESSES,
+  check,
+  crowd,
+  freshServers,
+  listTitle,
+  normalize,
+  seedLongJournal,
+  seedRules,
+} from './mockworld';
 import { LinkError, Listeners, RpcError, type LinkStatus, type Transport, type Unsubscribe } from './types';
 
 // The same files core/proto checks its Go types against.
@@ -24,12 +41,12 @@ const fixtures = import.meta.glob<State>('../../../../core/proto/testdata/fixtur
   import: 'default',
 });
 
-/** Scenario names: every fixture plus a daemon that does not answer. */
+/** Scenario names: every fixture, the crowded profile, a daemon that does not answer. */
 export const OFFLINE = 'offline';
 
 export function scenarios(): string[] {
   const names = Object.keys(fixtures).map((path) => path.replace(/^.*\/|\.json$/g, ''));
-  return [...names.sort(), OFFLINE];
+  return [...names.sort(), MANY, OFFLINE];
 }
 
 function fixture(name: string): State | undefined {
@@ -70,9 +87,17 @@ const STOP_MS = 300;
 const SETTLE_MS = 700;
 const CONFIRM_DOWN_MS = 1800;
 const SUBS_MS = 1500;
+const TEST_MS = 2500;
 
 // What the direct path carries in the fake world, bytes per second.
 const DIRECT = { down: 4_400_000, up: 245_000 };
+
+// A share of connections that close each second and are replaced by new
+// ones: new connections take the routes of the rules as they are now.
+const CHURN = 0.06;
+
+const SUB_INCIDENTS: Incident['kind'][] = ['sub_expiring', 'sub_expired', 'sub_traffic'];
+const VPN_INCIDENTS: Incident['kind'][] = ['server_down', 'all_servers_down', 'engine_failed', 'helper_down'];
 
 /**
  * A daemon in memory. It starts from a fixture and answers the methods the
@@ -84,14 +109,20 @@ export class MockTransport implements Transport {
   #status: LinkStatus = 'connecting';
   #reachable: boolean;
   #state: State;
+  #rules: Rules;
   #topics = new Set<Topic>();
   #journal: JournalEntry[] = [];
   #journalId = 9100;
   #incidentSeq = 7;
   #timers = new Set<ReturnType<typeof setTimeout>>();
   #conns: Connection[] = [];
+  #connCount: number;
+  #maker = new ConnectionMaker();
   #still: boolean;
   #ticks = 0;
+  #subSeq = 10;
+  #linkSeq = 10;
+  #urls = new Set<string>();
   // Bytes per second through the VPN while it works; remembered from the
   // fixture so that a restart brings the same picture back.
   #vpnRate: { up: number; down: number };
@@ -99,10 +130,14 @@ export class MockTransport implements Transport {
   constructor(scenario: string, options: { still?: boolean } = {}) {
     this.#reachable = scenario !== OFFLINE;
     this.#still = options.still ?? false;
-    this.#state = fixture(scenario) ?? fixture('ok')!;
+    let state = fixture(scenario) ?? fixture('ok')!;
+    if (scenario === MANY) state = crowd(state, Date.now());
+    this.#state = state;
+    this.#rules = seedRules(scenario, Date.now(), state.servers.length === 0);
+    this.#connCount = scenario === MANY ? 300 : 143;
     const t = this.#state.traffic;
     this.#vpnRate = t.down > 0 ? { up: t.up, down: t.down } : { up: 18_234, down: 912_340 };
-    this.#seedJournal();
+    this.#seedJournal(scenario === MANY);
     this.#seedConns();
     setTimeout(() => this.#setStatus(this.#reachable ? 'connected' : 'disconnected'), 120);
     setInterval(() => this.#tick(), 1000);
@@ -116,7 +151,7 @@ export class MockTransport implements Transport {
       setTimeout(() => {
         if (this.#status !== 'connected') return reject(new LinkError());
         try {
-          resolve(this.#handle(method, params) as Methods[M]['result']);
+          Promise.resolve(this.#handle(method, params)).then((v) => resolve(v as Methods[M]['result']), reject);
         } catch (err) {
           reject(err);
         }
@@ -177,16 +212,57 @@ export class MockTransport implements Transport {
       case 'vpn.restart':
         if (s.vpn.phase === 'off') throw new RpcError(ErrorCode.invalid, text.restartWhileOff);
         if (s.vpn.phase === 'starting' || s.vpn.phase === 'stopping') throw new RpcError(ErrorCode.busy, text.busy);
+        this.#log('vpn', 'info', text.restarting);
         this.#start();
         return {};
       case 'mode.set':
         s.vpn.mode = p.mode as State['vpn']['mode'];
         this.#log('vpn', 'info', s.vpn.mode === 'global' ? text.modeGlobal : text.modeRule);
+        // The engine closes what was opened under the old mode.
+        this.#seedConns();
         this.#touch();
         return {};
       case 'server.select':
         this.#select(p.id as string);
         return {};
+      case 'server.test':
+        return this.#test();
+      case 'server.favorite':
+        this.#favorite(p.id as string, p.favorite as boolean);
+        return {};
+      case 'server.reorder':
+        this.#reorder(p.ids as string[]);
+        return {};
+      case 'server.remove':
+        this.#removeServer(p.id as string);
+        return {};
+      case 'subs.add':
+        return this.#addSub(p.url as string, p.name as string | undefined);
+      case 'subs.addLink':
+        return this.#addLink(p.link as string);
+      case 'subs.rename':
+        this.#renameSub(p.id as string, p.name as string);
+        return {};
+      case 'subs.remove':
+        this.#removeSub(p.id as string);
+        return {};
+      case 'subs.update':
+        return this.#updateSubs(p.id as string | undefined);
+      case 'rules.get':
+        return this.#soon(120, () => structuredClone(this.#rules));
+      case 'rules.add':
+        return this.#addRule(p.list as RuleListName, p.value as string, p.kind as RuleKind | undefined);
+      case 'rules.remove':
+        this.#removeRule(p.list as RuleListName, p.kind as RuleKind, p.value as string);
+        return {};
+      case 'rules.check':
+        return this.#soon(150, () => {
+          const answer = check(this.#rules, s.vpn.mode === 'global', p.target as string);
+          if (typeof answer === 'string') throw new RpcError(ErrorCode.invalid, answer);
+          return answer;
+        });
+      case 'rules.processes':
+        return this.#soon(400, () => ({ processes: structuredClone(PROCESSES) }));
       case 'settings.set':
         this.#applySettings(p.patch as Partial<Settings>);
         return {};
@@ -196,9 +272,29 @@ export class MockTransport implements Transport {
       case 'journal.list': {
         const limit = Math.min((p.limit as number | undefined) ?? 100, 500);
         const before = p.before as number | undefined;
-        const all = before === undefined ? this.#journal : this.#journal.filter((e) => e.id < before);
+        const f = p.filter as JournalFilter | undefined;
+        const fits = (e: JournalEntry) =>
+          (before === undefined || e.id < before) &&
+          (!f?.cats?.length || f.cats.includes(e.cat)) &&
+          (!f?.levels?.length || f.levels.includes(e.level)) &&
+          (!f?.incident || e.incident === f.incident);
+        const all = this.#journal.filter(fits);
         return { entries: structuredClone(all.slice(0, limit)), more: all.length > limit };
       }
+      case 'diag.export':
+        return this.#soon(900, () => {
+          const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+          const file = `strelka-report-${stamp}.zip`;
+          this.#log('system', 'info', text.reportMade(file));
+          return { path: `C:\\ProgramData\\Strelka\\reports\\${file}` };
+        });
+      case 'engine.versions':
+        return this.#soon(250, () => ({
+          engines: [
+            { name: 'sing-box', version: '1.14.0' },
+            { name: 'xray', version: '26.3.27' },
+          ],
+        }));
       default:
         throw new RpcError(ErrorCode.methodNotFound, text.unknownMethod);
     }
@@ -208,7 +304,7 @@ export class MockTransport implements Transport {
     const s = this.#state;
     if (s.servers.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
     this.#cancelTimers();
-    this.#closeIncidents(['server_down', 'all_servers_down', 'engine_failed', 'helper_down']);
+    this.#closeIncidents(VPN_INCIDENTS);
     s.vpn = { ...s.vpn, desired: 'on', phase: 'starting', since: null, failReason: null, failText: null };
     s.health = { ...s.health, verdict: 'settling', since: now(), hint: null };
     s.guard.blocking = false;
@@ -221,6 +317,7 @@ export class MockTransport implements Transport {
       s.vpn.phase = 'on';
       s.vpn.since = now();
       s.busy = null;
+      this.#seedConns();
       this.#judge(true);
     });
   }
@@ -228,7 +325,7 @@ export class MockTransport implements Transport {
   #stop(): void {
     const s = this.#state;
     this.#cancelTimers();
-    this.#closeIncidents(['server_down', 'all_servers_down', 'engine_failed', 'helper_down']);
+    this.#closeIncidents(VPN_INCIDENTS);
     if (s.vpn.phase === 'off') {
       s.vpn.desired = 'off';
       this.#touch();
@@ -266,7 +363,6 @@ export class MockTransport implements Transport {
     this.#closeIncidents(['server_down']);
     s.health = { ...s.health, verdict: 'settling', since: now(), hint: null };
     s.traffic.up = s.traffic.down = 0;
-    s.conns.vpn = 0;
     this.#touch();
     this.#later(SETTLE_MS, () => this.#judge(false));
   }
@@ -287,7 +383,7 @@ export class MockTransport implements Transport {
       s.server.pingAt = now();
       s.traffic.up = this.#vpnRate.up;
       s.traffic.down = this.#vpnRate.down;
-      s.conns = { total: 143, vpn: 37 };
+      this.#count();
       if (started) this.#log('vpn', 'info', text.connected(server.name, server.ping));
       this.#touch();
       return;
@@ -309,17 +405,257 @@ export class MockTransport implements Transport {
       };
       s.health = { ...s.health, verdict: 'server_down', since: now(), hint: text.serverDownHint };
       s.incidents = [...s.incidents, incident];
-      s.conns = { total: 12, vpn: 0 };
       this.#log('server', 'problem', `${incident.title}. ${incident.body}`, id);
       this.#touch();
     });
   }
+
+  // ---- servers and subscriptions ----
+
+  #jobBusy(): void {
+    if (this.#state.busy === 'updating_subs') throw new RpcError(ErrorCode.busy, text.subsBusy);
+    if (this.#state.busy === 'testing') throw new RpcError(ErrorCode.busy, text.testBusy);
+  }
+
+  #test(): object {
+    const s = this.#state;
+    this.#jobBusy();
+    if (s.vpn.phase !== 'on') throw new RpcError(ErrorCode.invalid, text.testNeedsVpn);
+    if (s.servers.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
+    s.busy = 'testing';
+    this.#touch();
+    this.#later(TEST_MS, () => {
+      let answered = 0;
+      for (const x of s.servers) {
+        x.pingAt = now();
+        if (x.alive && x.ping !== null) {
+          answered++;
+          if (!this.#still) x.ping = Math.max(8, Math.round(x.ping * (0.9 + Math.random() * 0.2)));
+          x.stats = x.stats
+            ? { ...x.stats, samples: x.stats.samples + 1 }
+            : { avg: x.ping, loss: 0, samples: 1 };
+        } else if (x.stats) {
+          x.stats = { ...x.stats, samples: x.stats.samples + 1 };
+        }
+      }
+      s.busy = null;
+      this.#log('server', 'info', text.testDone(answered, s.servers.length));
+      this.#touch();
+    });
+    return {};
+  }
+
+  #favorite(id: string, favorite: boolean): void {
+    const s = this.#state;
+    const server = s.servers.find((x) => x.id === id);
+    if (!server) throw new RpcError(ErrorCode.notFound, text.noSuchServer);
+    if (server.favorite === favorite) return;
+    if (favorite) {
+      server.order = Math.max(-1, ...s.servers.filter((x) => x.favorite).map((x) => x.order)) + 1;
+      server.favorite = true;
+    } else {
+      server.favorite = false;
+      server.order = 0;
+      this.#renumber(s.servers.filter((x) => x.favorite).sort((a, b) => a.order - b.order).map((x) => x.id));
+    }
+    this.#touch();
+  }
+
+  #reorder(ids: string[]): void {
+    const favorites = this.#state.servers.filter((x) => x.favorite).map((x) => x.id);
+    if (ids.length !== favorites.length || !ids.every((id) => favorites.includes(id))) {
+      throw new RpcError(ErrorCode.invalid, text.reorderBad);
+    }
+    this.#renumber(ids);
+    this.#touch();
+  }
+
+  #renumber(ids: string[]): void {
+    for (const [i, id] of ids.entries()) {
+      const x = this.#state.servers.find((s) => s.id === id);
+      if (x) x.order = i;
+    }
+  }
+
+  #removeServer(id: string): void {
+    const s = this.#state;
+    this.#jobBusy();
+    const server = s.servers.find((x) => x.id === id);
+    if (!server) throw new RpcError(ErrorCode.notFound, text.noSuchServer);
+    if (server.sub !== '') throw new RpcError(ErrorCode.invalid, text.serverFromSub);
+    s.servers = s.servers.filter((x) => x.id !== id);
+    this.#log('server', 'info', text.serverRemoved(server.name));
+    this.#afterServersChanged();
+  }
+
+  async #addSub(url: string, name: string | undefined): Promise<{ id: string; servers: number }> {
+    const s = this.#state;
+    this.#jobBusy();
+    const clean = (url ?? '').trim();
+    if (!/^https?:\/\/\S+$/i.test(clean)) throw new RpcError(ErrorCode.invalid, text.notUrl);
+    if (this.#urls.has(clean)) throw new RpcError(ErrorCode.invalid, text.subExists);
+    s.busy = 'updating_subs';
+    this.#touch();
+    await this.#wait(SUBS_MS);
+    s.busy = null;
+    if (/fail|404/i.test(clean)) {
+      this.#touch();
+      throw new RpcError(ErrorCode.fetchFailed, text.subFailed);
+    }
+    this.#urls.add(clean);
+    const id = `s${++this.#subSeq}`;
+    const title = name?.trim() || text.newSubName;
+    const servers = freshServers(id, `n${this.#subSeq}`, 6, Date.now(), this.#subSeq);
+    s.servers = [...s.servers, ...servers];
+    s.subs = [
+      ...s.subs,
+      {
+        id,
+        name: title,
+        url: `${clean.replace(/^(https?:\/\/[^/]+).*$/, '$1')}/…${clean.slice(-4)}`,
+        servers: servers.length,
+        updatedAt: now(),
+        error: null,
+        expireAt: null,
+        usedBytes: null,
+        totalBytes: null,
+      },
+    ];
+    this.#log('subs', 'info', text.subAdded(title, servers.length));
+    this.#afterServersChanged();
+    return { id, servers: servers.length };
+  }
+
+  #addLink(link: string): { id: string } {
+    const s = this.#state;
+    this.#jobBusy();
+    const clean = (link ?? '').trim();
+    const scheme = /^(vless|trojan|ss|hysteria2|hy2):\/\/(?:[^@\s]*@)?([^:/?#\s]+)/i.exec(clean);
+    if (!scheme) throw new RpcError(ErrorCode.invalid, text.notLink);
+    const protocol = ({ vless: 'vless', trojan: 'trojan', ss: 'shadowsocks', hysteria2: 'hysteria2', hy2: 'hysteria2' } as const)[
+      scheme[1]!.toLowerCase() as 'vless'
+    ];
+    let label = text.linkName;
+    const hash = clean.indexOf('#');
+    if (hash >= 0) {
+      try {
+        label = decodeURIComponent(clean.slice(hash + 1)) || label;
+      } catch {
+        // A broken fragment keeps the default name.
+      }
+    }
+    const id = `link-${++this.#linkSeq}`;
+    const server: Server = {
+      id,
+      name: label,
+      country: null,
+      sub: '',
+      protocol,
+      via: 'sing-box',
+      host: scheme[2]!,
+      favorite: false,
+      order: 0,
+      ping: null,
+      pingAt: null,
+      alive: false,
+      stats: null,
+    };
+    s.servers = [...s.servers, server];
+    this.#log('server', 'info', text.linkAdded(label));
+    this.#afterServersChanged();
+    return { id };
+  }
+
+  #renameSub(id: string, name: string): void {
+    this.#jobBusy();
+    const sub = this.#state.subs.find((x) => x.id === id);
+    if (!sub) throw new RpcError(ErrorCode.notFound, text.noSuchSub);
+    if (!name?.trim()) throw new RpcError(ErrorCode.invalid, text.nameEmpty);
+    sub.name = name.trim();
+    this.#touch();
+  }
+
+  #removeSub(id: string): void {
+    const s = this.#state;
+    this.#jobBusy();
+    const sub = s.subs.find((x) => x.id === id);
+    if (!sub) throw new RpcError(ErrorCode.notFound, text.noSuchSub);
+    s.subs = s.subs.filter((x) => x.id !== id);
+    s.servers = s.servers.filter((x) => x.sub !== id);
+    this.#log('subs', 'info', text.subRemoved(sub.name));
+    this.#afterServersChanged();
+  }
+
+  async #updateSubs(id: string | undefined): Promise<object> {
+    const s = this.#state;
+    this.#jobBusy();
+    const asked = id === undefined ? s.subs : s.subs.filter((x) => x.id === id);
+    if (id !== undefined && asked.length === 0) throw new RpcError(ErrorCode.notFound, text.noSuchSub);
+    s.busy = 'updating_subs';
+    this.#touch();
+    await this.#wait(SUBS_MS);
+    s.busy = null;
+    let fresh = 0;
+    for (const sub of asked) {
+      // The broken one of the crowded scenario stays broken.
+      if (sub.error) continue;
+      sub.updatedAt = now();
+      fresh++;
+    }
+    if (fresh > 0) {
+      this.#closeIncidents(SUB_INCIDENTS);
+      this.#log('subs', 'info', text.subsUpdated(s.servers.length));
+    }
+    this.#touch();
+    if (fresh === 0 && asked.length > 0) throw new RpcError(ErrorCode.fetchFailed, text.subStillBroken);
+    return {};
+  }
+
+  /** What the daemon does after servers came or went: fix the choice. */
+  #afterServersChanged(): void {
+    const s = this.#state;
+    for (const sub of s.subs) sub.servers = s.servers.filter((x) => x.sub === sub.id).length;
+    if (!s.servers.some((x) => x.id === s.server.selected)) {
+      const next = s.servers.filter((x) => x.favorite).sort((a, b) => a.order - b.order)[0] ?? s.servers[0];
+      s.server = { selected: next?.id ?? null, ping: null, pingAt: null };
+    }
+    if (s.servers.length === 0 && s.vpn.desired === 'on') this.#stop();
+    this.#touch();
+  }
+
+  // ---- rules ----
+
+  #addRule(list: RuleListName, value: string, kind: RuleKind | undefined): { kind: RuleKind; value: string } {
+    if (list !== 'vpn' && list !== 'direct') throw new RpcError(ErrorCode.invalidParams, text.unknownMethod);
+    const n = normalize(kind, value);
+    if (typeof n === 'string') throw new RpcError(ErrorCode.invalid, n);
+    const key = KEY[n.kind];
+    const other = list === 'vpn' ? 'direct' : 'vpn';
+    this.#rules[other][key] = this.#rules[other][key].filter((x) => x !== n.value);
+    if (!this.#rules[list][key].includes(n.value)) this.#rules[list][key] = [...this.#rules[list][key], n.value];
+    this.#log('rules', 'info', text.ruleAdded(listTitle(list), n.value));
+    return n;
+  }
+
+  #removeRule(list: RuleListName, kind: RuleKind, value: string): void {
+    const key = KEY[kind];
+    if (!key || !this.#rules[list]?.[key].includes(value)) throw new RpcError(ErrorCode.notFound, text.noSuchRule);
+    this.#rules[list][key] = this.#rules[list][key].filter((x) => x !== value);
+    this.#log('rules', 'info', text.ruleRemoved(listTitle(list), value));
+  }
+
+  // ---- settings and incidents ----
 
   #applySettings(patch: Partial<Settings>): void {
     const s = this.#state;
     for (const key of Object.keys(patch)) {
       if (!(key in s.settings)) throw new RpcError(ErrorCode.invalidParams, text.badSetting);
     }
+    const port = patch.localProxyPort;
+    if (port !== undefined && port !== 0 && !(Number.isInteger(port) && port >= 1024 && port <= 65535)) {
+      throw new RpcError(ErrorCode.invalidParams, text.badPort);
+    }
+    const before = s.settings;
     s.settings = { ...s.settings, ...patch };
     s.guard.enabled = s.settings.guard;
     s.guard.allowLan = s.settings.allowLan;
@@ -331,6 +667,9 @@ export class MockTransport implements Transport {
     }
     if (patch.guard !== undefined) this.#log('guard', 'info', patch.guard ? text.guardOn : text.guardOff);
     this.#touch();
+    // These two are baked into the engine's config.
+    const rebuild = before.ipv6 !== s.settings.ipv6 || before.localProxyPort !== s.settings.localProxyPort;
+    if (rebuild && s.vpn.phase === 'on') this.#start();
   }
 
   #action(action: string): void {
@@ -346,15 +685,7 @@ export class MockTransport implements Transport {
         this.#touch();
         return;
       case 'update_subs':
-        s.busy = 'updating_subs';
-        this.#touch();
-        this.#later(SUBS_MS, () => {
-          s.busy = null;
-          this.#closeIncidents(['sub_expiring', 'sub_expired', 'sub_traffic']);
-          for (const sub of s.subs) sub.updatedAt = now();
-          this.#log('subs', 'info', text.subsUpdated(s.servers.length));
-          this.#touch();
-        });
+        void this.#updateSubs(undefined).catch(() => {});
         return;
       case 'open':
       case 'dismiss':
@@ -374,6 +705,11 @@ export class MockTransport implements Transport {
     const s = this.#state;
     s.traffic.up = s.traffic.down = 0;
     s.conns = { total: 0, vpn: 0 };
+  }
+
+  #count(): void {
+    const vpn = this.#conns.filter((c) => c.route === 'vpn').length;
+    this.#state.conns = { total: this.#conns.length, vpn };
   }
 
   #closeIncidents(kinds: Incident['kind'][]): void {
@@ -404,10 +740,21 @@ export class MockTransport implements Transport {
     this.#timers.add(timer);
   }
 
+  /** A pause that a stop or a start does not cancel: a download runs on. */
+  #wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** An answer that takes a moment, like the real daemon's work off its loop. */
+  async #soon<T>(ms: number, fn: () => T): Promise<T> {
+    await this.#wait(ms);
+    return fn();
+  }
+
   #cancelTimers(): void {
     for (const timer of this.#timers) clearTimeout(timer);
     this.#timers.clear();
-    if (this.#state.busy !== null) this.#state.busy = null;
+    if (this.#state.busy === 'starting' || this.#state.busy === 'stopping') this.#state.busy = null;
   }
 
   #setStatus(status: LinkStatus): void {
@@ -417,68 +764,73 @@ export class MockTransport implements Transport {
   }
 
   /** The journal a scenario starts with, newest first, ending in its story. */
-  #seedJournal(): void {
+  #seedJournal(long: boolean): void {
     const s = this.#state;
-    const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-    const add = (t: string, cat: JournalCat, level: Severity, entryText: string, incident: string | null = null) =>
-      this.#journal.unshift({ id: ++this.#journalId, t, cat, level, text: entryText, incident });
+    const seeds: Omit<JournalEntry, 'id'>[] = [];
+    const add = (t: number, cat: JournalCat, level: Severity, entryText: string, incident: string | null = null) =>
+      seeds.push({ t: new Date(t).toISOString(), cat, level, text: entryText, incident });
+    const ago = (minutes: number) => Date.now() - minutes * 60_000;
 
     if (s.servers.length === 0) {
       add(ago(4), 'system', 'info', text.daemonStarted);
-      return;
-    }
-    add(ago(336), 'server', 'info', text.recovered);
-    add(ago(198), 'subs', 'info', text.subsUpdated(s.servers.length));
-    const first = s.servers[0]!;
-    add(s.vpn.since ?? ago(134), 'vpn', 'info', text.connected(first.name, first.ping));
+    } else {
+      if (long) seedLongJournal(add, s.servers, Date.now());
+      // An incident that is over: three lines, one entry on the journal screen.
+      add(ago(339), 'server', 'problem', text.downAgain, 'i-20261112-5');
+      add(ago(338), 'server', 'problem', `${text.downAgain.replace(/\..*$/, '.')} ${text.serverDownHint}`, 'i-20261112-5');
+      add(ago(336), 'server', 'info', text.backAgain, 'i-20261112-5');
+      add(ago(198), 'subs', 'info', text.subsUpdated(s.servers.length));
+      const first = s.servers[0]!;
+      add(Date.parse(s.vpn.since ?? '') || ago(134), 'vpn', 'info', text.connected(first.name, first.ping));
 
-    const incident = s.incidents[0];
-    if (incident) add(incident.opened, 'server', incident.severity, `${incident.title}. ${incident.body}`, incident.id);
-    else if (s.health.verdict === 'no_internet') add(s.health.since ?? ago(1), 'system', 'problem', text.noInternet);
-    else if (s.vpn.phase === 'off') add(ago(1), 'vpn', 'info', text.stopped);
+      const incident = s.incidents.find((i) => VPN_INCIDENTS.includes(i.kind));
+      if (incident) add(Date.parse(incident.opened), 'server', incident.severity, `${incident.title}. ${incident.body}`, incident.id);
+      else if (s.health.verdict === 'no_internet') add(Date.parse(s.health.since ?? '') || ago(1), 'system', 'problem', text.noInternet);
+      else if (s.vpn.phase === 'off') add(ago(1), 'vpn', 'info', text.stopped);
+    }
+    // Ids follow time, as in the real journal.
+    seeds.sort((a, b) => a.t.localeCompare(b.t));
+    for (const seed of seeds) this.#journal.unshift({ id: ++this.#journalId, ...seed });
   }
 
-  /** A believable list of connections: the scheme derives speeds from it. */
+  /** A believable list of connections: the scheme and the rules screen use it. */
   #seedConns(): void {
-    const names = ['chrome.exe', 'Discord.exe', 'Telegram.exe', 'steam.exe', 'code.exe', 'svchost.exe'];
-    for (let i = 0; i < 143; i++) {
-      this.#conns.push({
-        id: `c${i}`,
-        process: names[i % names.length]!,
-        host: `host${i}.example.com`,
-        dest: `203.0.113.${(i % 250) + 1}:443`,
-        route: i < 37 ? 'vpn' : 'direct',
-        chain: i < 37 ? ['proxy'] : ['direct'],
-        up: 0,
-        down: 0,
-        started: now(),
-      });
-    }
+    const global = this.#state.vpn.mode === 'global';
+    this.#conns = Array.from({ length: this.#connCount }, () => this.#maker.make(this.#rules, global));
   }
 
   /** Once a second: traffic moves, numbers in State follow every other time. */
   #tick(): void {
     const s = this.#state;
     if (this.#status !== 'connected' || s.vpn.phase !== 'on') return;
+    const global = s.vpn.mode === 'global';
+    if (!this.#still) {
+      for (let i = 0; i < this.#conns.length; i++) {
+        if (Math.random() < CHURN) this.#conns[i] = this.#maker.make(this.#rules, global);
+      }
+    }
     const wobble = () => (this.#still ? 1 : 0.8 + Math.random() * 0.4);
     const vpnFlows = s.health.verdict === 'ok';
     const directFlows = s.health.internet && !s.guard.blocking;
     const vpn = vpnFlows ? { up: this.#vpnRate.up * wobble(), down: this.#vpnRate.down * wobble() } : { up: 0, down: 0 };
     const direct = directFlows ? { up: DIRECT.up * wobble(), down: DIRECT.down * wobble() } : { up: 0, down: 0 };
 
-    const live = this.#conns.filter((c, i) => (c.route === 'vpn' ? i < s.conns.vpn : i - 37 < s.conns.total - s.conns.vpn));
-    const vpnCount = Math.max(live.filter((c) => c.route === 'vpn').length, 1);
-    const directCount = Math.max(live.filter((c) => c.route === 'direct').length, 1);
-    for (const c of live) {
+    const vpnCount = Math.max(this.#conns.filter((c) => c.route === 'vpn').length, 1);
+    const directCount = Math.max(this.#conns.filter((c) => c.route === 'direct').length, 1);
+    for (const [i, c] of this.#conns.entries()) {
       const rate = c.route === 'vpn' ? vpn : direct;
       const share = c.route === 'vpn' ? vpnCount : directCount;
-      c.up += Math.round(rate.up / share);
-      c.down += Math.round(rate.down / share);
+      // Uneven, as in life: a few connections carry most of the bytes.
+      const weight = i % 9 === 0 ? 5 : 0.5;
+      c.up += Math.round((rate.up / share) * weight);
+      c.down += Math.round((rate.down / share) * weight);
     }
-    if (this.#topics.has('connections')) this.#listeners.emit('connections', structuredClone(live));
+    if (this.#topics.has('connections')) this.#listeners.emit('connections', structuredClone(this.#conns));
 
     // State carries traffic every other second, like the real daemon.
-    if (!vpnFlows || this.#still || ++this.#ticks % 2 !== 0) return;
+    if (this.#still || ++this.#ticks % 2 !== 0) return;
+    this.#count();
+    if (!vpnFlows) return;
     s.traffic.up = Math.round(vpn.up + direct.up);
     s.traffic.down = Math.round(vpn.down + direct.down);
     s.traffic.upTotal += s.traffic.up * 2;

@@ -171,6 +171,41 @@ export interface Connection {
 
 export type Topic = 'state' | 'journal' | 'traffic' | 'connections' | 'toast' | 'log';
 
+export type RuleListName = 'vpn' | 'direct';
+export type RuleKind = 'process' | 'suffix' | 'domain' | 'keyword' | 'ip';
+
+/** One direction's rules; every array is present. */
+export interface RuleList {
+  processes: string[];
+  domains: string[];
+  suffixes: string[];
+  keywords: string[];
+  ips: string[];
+}
+
+/** A list the engine keeps up to date by itself (blocked sites). */
+export interface AutoList {
+  tag: string;
+  count: number;
+  updatedAt: string | null;
+}
+
+export interface Rules {
+  vpn: RuleList;
+  direct: RuleList;
+  auto: AutoList[];
+}
+
+export interface ProcessInfo {
+  name: string;
+  path: string;
+}
+
+export interface EngineVersion {
+  name: 'sing-box' | 'xray';
+  version: string | null;
+}
+
 /** What the application may send as incident.action. */
 export type IncidentAction = `switch:${string}` | 'retry' | 'update_subs' | 'release';
 
@@ -188,7 +223,7 @@ export const ErrorCode = {
 
 type Empty = Record<string, never>;
 
-/** Methods of the daemon the application calls at this stage. */
+/** Methods of the daemon the application calls. */
 export interface Methods {
   hello: {
     params: { client: 'app' | 'ctl'; version: string; proto: number };
@@ -208,6 +243,25 @@ export interface Methods {
     params: { before?: number; limit?: number; filter?: JournalFilter };
     result: { entries: JournalEntry[]; more: boolean };
   };
+  'server.test': { params: { ids?: string[] }; result: Empty };
+  'server.favorite': { params: { id: string; favorite: boolean }; result: Empty };
+  'server.reorder': { params: { ids: string[] }; result: Empty };
+  'server.remove': { params: { id: string }; result: Empty };
+  'subs.add': { params: { url: string; name?: string }; result: { id: string; servers: number } };
+  'subs.addLink': { params: { link: string }; result: { id: string } };
+  'subs.rename': { params: { id: string; name: string }; result: Empty };
+  'subs.remove': { params: { id: string }; result: Empty };
+  'subs.update': { params: { id?: string }; result: Empty };
+  'rules.get': { params: undefined; result: Rules };
+  'rules.add': {
+    params: { list: RuleListName; value: string; kind?: RuleKind };
+    result: { kind: RuleKind; value: string };
+  };
+  'rules.remove': { params: { list: RuleListName; kind: RuleKind; value: string }; result: Empty };
+  'rules.check': { params: { target: string }; result: { route: 'vpn' | 'direct'; because: string } };
+  'rules.processes': { params: undefined; result: { processes: ProcessInfo[] } };
+  'diag.export': { params: undefined; result: { path: string } };
+  'engine.versions': { params: undefined; result: { engines: EngineVersion[] } };
 }
 
 export type MethodName = keyof Methods;

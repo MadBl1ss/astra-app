@@ -38,6 +38,9 @@ func (p Paths) WarnedFile() string { return filepath.Join(p.Data, "warned.json")
 func (p Paths) RulesDir() string   { return filepath.Join(p.Data, "rules") }
 func (p Paths) XrayConfig() string { return filepath.Join(p.Data, "run", "xray.json") }
 
+// ReportsDir holds the archives diag.export makes for support.
+func (p Paths) ReportsDir() string { return filepath.Join(p.Data, "reports") }
+
 // EngineLog is where an engine's stderr is kept, e.g. logs/sing-box.log.
 func (p Paths) EngineLog(name string) string { return filepath.Join(p.Data, "logs", name+".log") }
 

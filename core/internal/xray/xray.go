@@ -21,10 +21,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"strelka/internal/runx"
 )
 
 // BasePort is where the local SOCKS ports start. The old tray used 17100 and
@@ -263,14 +264,7 @@ func PortFree(port int) bool {
 // Test runs "xray run -test" on a config and returns Xray's complaint if it
 // does not accept it.
 func Test(ctx context.Context, exe, configPath, dir string) error {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, "run", "-test", "-c", configPath)
-	cmd.Path = exe
-	cmd.Err = nil
-	cmd.Dir = dir
-	hideWindow(cmd)
-	out, err := cmd.CombinedOutput()
+	out, err := runx.Output(ctx, 20*time.Second, exe, dir, "run", "-test", "-c", configPath)
 	if err != nil {
 		return fmt.Errorf("xray -test: %w: %s", err, lastLine(out))
 	}

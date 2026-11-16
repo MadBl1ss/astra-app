@@ -151,6 +151,7 @@ type Daemon struct {
 	phaseBusy string // starting | stopping
 	job       string // updating_subs | testing
 	autoInfo  map[string]autoListInfo
+	versions  map[string]versionInfo // engine.versions, by engine name
 
 	// Health and incidents, see health.go.
 	tune        health.Tuning
@@ -187,6 +188,7 @@ func New(opts Options) (*Daemon, error) {
 		st:       proto.NewState(Version),
 		pings:    map[string]ping{},
 		autoInfo: map[string]autoListInfo{},
+		versions: map[string]versionInfo{},
 		tune:     health.Default(),
 		held:     map[string]proto.Toast{},
 	}
@@ -435,6 +437,10 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		result, err = d.journalList(c)
 	case proto.MethodIncidentAction:
 		result, err = d.incidentAction(c)
+	case proto.MethodEngineVersions:
+		return d.engineVersions(c)
+	case proto.MethodDiagExport:
+		return d.diagExport(c)
 	default:
 		return d.dispatchProfile(c)
 	}
