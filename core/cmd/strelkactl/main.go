@@ -2,6 +2,7 @@
 // the checks of each stage.
 //
 //	strelkactl [--pipe NAME] status | start | stop | restart | watch | call <method> [json]
+//	strelkactl subs | servers | select | test | mode | rules | set | import-legacy
 package main
 
 import (
@@ -34,6 +35,27 @@ func usage() {
   watch [--log] [--json] поток состояния и журнала; --log добавляет лог движка
   call МЕТОД [JSON]      вызвать любой метод службы и напечатать ответ
 
+  subs [list]            подписки
+  subs add ССЫЛКА [ИМЯ]  добавить подписку и скачать её серверы
+  subs link ССЫЛКА       добавить один сервер по ссылке vless://, trojan://, ss://, hysteria2://
+  subs update [НОМЕР]    обновить одну подписку или все
+  subs rm НОМЕР          удалить подписку вместе с серверами
+  subs rename НОМЕР ИМЯ  переименовать
+  servers                серверы: кто выбран, пинг, статистика
+  conns                  открытые соединения: программа, сайт, через VPN или напрямую
+  select СЕРВЕР          выбрать сервер, без перезапуска VPN
+  test [СЕРВЕР…]         проверить серверы (все или перечисленные); нужен включённый VPN
+  mode [rule|global]     режим: через VPN только список или весь трафик
+  rules [list]           списки «через VPN» и «напрямую»
+  rules add СПИСОК ЗНАЧЕНИЕ [--kind ВИД]
+                         СПИСОК — vpn или direct; ЗНАЧЕНИЕ — программа, сайт или адрес.
+                         ВИД нужен для keyword (слово в адресе) и domain (точное имя)
+  rules rm СПИСОК ВИД ЗНАЧЕНИЕ
+  rules check ЦЕЛЬ       куда пойдёт программа, сайт или адрес и почему
+  rules apps             запущенные программы, которые можно добавить в правила
+  set [ИМЯ=ЗНАЧЕНИЕ…]    настройки службы; без параметров — показать
+  import-legacy ПАПКА    перенести подписки, правила и выбор из старой Стрелки
+
   --pipe     имя канала; по умолчанию $STRELKA_PIPE или strelka-dev
   --no-wait  для start, stop, restart: не ждать, пока фаза сменится
 `)
@@ -58,7 +80,8 @@ func realMain(args []string) int {
 	}
 	cmd, rest := rest[0], rest[1:]
 	switch cmd {
-	case "status", "start", "stop", "restart", "watch", "call":
+	case "status", "start", "stop", "restart", "watch", "call",
+		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy":
 	case "help":
 		usage()
 		return 0
@@ -101,6 +124,24 @@ func realMain(args []string) int {
 		err = watch(ctx, c, rest)
 	case "call":
 		err = rawCall(ctx, c, rest)
+	case "subs":
+		err = subsCmd(ctx, c, rest)
+	case "servers":
+		err = serversCmd(ctx, c)
+	case "conns":
+		err = connsCmd(ctx, c)
+	case "select":
+		err = selectCmd(ctx, c, rest)
+	case "test":
+		err = testCmd(ctx, c, rest)
+	case "mode":
+		err = modeCmd(ctx, c, rest)
+	case "rules":
+		err = rulesCmd(ctx, c, rest)
+	case "set":
+		err = setCmd(ctx, c, rest)
+	case "import-legacy":
+		err = importLegacy(ctx, c, rest)
 	}
 	if err != nil {
 		return fail(err)
@@ -159,6 +200,15 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 		fmt.Printf("Причина: %s (%s)\n", *st.VPN.FailText, deref(st.VPN.FailReason))
 	}
 	fmt.Printf("Нужно:   %s\n", st.VPN.Desired)
+	fmt.Printf("Режим:   %s (%s)\n", modeText[st.VPN.Mode], st.VPN.Mode)
+	server := "не выбран"
+	if st.Server.Selected != nil {
+		server = *st.Server.Selected
+		if st.Server.Ping != nil {
+			server += fmt.Sprintf(", %d мс", *st.Server.Ping)
+		}
+	}
+	fmt.Printf("Сервер:  %s (всего серверов: %d, подписок: %d)\n", server, len(st.Servers), len(st.Subs))
 	for _, e := range es.Engines {
 		if e.Running {
 			since := ""
@@ -324,7 +374,8 @@ func rawCall(ctx context.Context, c *ipc.Client, args []string) error {
 		params = raw
 	}
 	var result json.RawMessage
-	if err := call(ctx, c, args[0], params, &result); err != nil {
+	// Any method may be called here, the slow ones included.
+	if err := callLong(ctx, c, args[0], params, &result); err != nil {
 		return err
 	}
 	var pretty any

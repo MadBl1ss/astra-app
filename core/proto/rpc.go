@@ -109,3 +109,174 @@ type EngineStatus struct {
 	Since    *time.Time `json:"since"`    // start of the current process
 	Restarts int        `json:"restarts"` // crashes since the last vpn.start
 }
+
+// Methods added with profiles, rules and settings.
+const (
+	MethodModeSet        = "mode.set"
+	MethodServerSelect   = "server.select"
+	MethodServerTest     = "server.test"
+	MethodServerFavorite = "server.favorite"
+	MethodServerReorder  = "server.reorder"
+	MethodServerRemove   = "server.remove"
+	MethodSubsAdd        = "subs.add"
+	MethodSubsAddLink    = "subs.addLink"
+	MethodSubsRename     = "subs.rename"
+	MethodSubsRemove     = "subs.remove"
+	MethodSubsUpdate     = "subs.update"
+	MethodRulesGet       = "rules.get"
+	MethodRulesAdd       = "rules.add"
+	MethodRulesRemove    = "rules.remove"
+	MethodRulesCheck     = "rules.check"
+	MethodRulesProcesses = "rules.processes"
+	MethodSettingsSet    = "settings.set"
+	MethodLegacyImport   = "legacy.import"
+)
+
+type ModeParams struct {
+	Mode string `json:"mode"` // rule | global
+}
+
+type IDParams struct {
+	ID string `json:"id"`
+}
+
+type ServerTestParams struct {
+	IDs []string `json:"ids,omitempty"` // empty means every server
+}
+
+type ServerFavoriteParams struct {
+	ID       string `json:"id"`
+	Favorite bool   `json:"favorite"`
+}
+
+type ServerReorderParams struct {
+	IDs []string `json:"ids"`
+}
+
+type SubsAddParams struct {
+	URL  string `json:"url"`
+	Name string `json:"name,omitempty"`
+}
+
+// SubsAddResult tells the client what the new subscription brought.
+type SubsAddResult struct {
+	ID      string `json:"id"`
+	Servers int    `json:"servers"`
+}
+
+type SubsAddLinkParams struct {
+	Link string `json:"link"`
+}
+
+type SubsRenameParams struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type SubsUpdateParams struct {
+	ID string `json:"id,omitempty"` // empty means all
+}
+
+// Rule lists and kinds.
+const (
+	ListVPN    = "vpn"
+	ListDirect = "direct"
+
+	KindProcess = "process"
+	KindDomain  = "domain"
+	KindSuffix  = "suffix"
+	KindKeyword = "keyword"
+	KindIP      = "ip"
+)
+
+// RuleList is one direction's rules. Slices are never nil on the wire.
+type RuleList struct {
+	Processes []string `json:"processes"`
+	Domains   []string `json:"domains"`
+	Suffixes  []string `json:"suffixes"`
+	Keywords  []string `json:"keywords"`
+	IPs       []string `json:"ips"`
+}
+
+// AutoList describes one of the lists the engine keeps up to date itself.
+type AutoList struct {
+	Tag       string     `json:"tag"`
+	Count     int        `json:"count"`
+	UpdatedAt *time.Time `json:"updatedAt"`
+}
+
+type RulesGetResult struct {
+	VPN    RuleList   `json:"vpn"`
+	Direct RuleList   `json:"direct"`
+	Auto   []AutoList `json:"auto"`
+}
+
+type RulesAddParams struct {
+	List  string `json:"list"`
+	Value string `json:"value"`
+	Kind  string `json:"kind,omitempty"` // empty: the daemon works it out
+}
+
+// RuleRef names one rule; it is both the answer to rules.add and the
+// parameters of rules.remove.
+type RuleRef struct {
+	List  string `json:"list,omitempty"`
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+type RulesCheckParams struct {
+	Target string `json:"target"`
+}
+
+type RulesCheckResult struct {
+	Route   string `json:"route"` // vpn | direct
+	Because string `json:"because"`
+}
+
+type ProcessInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type SettingsSetParams struct {
+	Patch json.RawMessage `json:"patch"`
+}
+
+type LegacyImportParams struct {
+	Dir string `json:"dir"`
+}
+
+// LegacyImportResult sums up what came over from the old Strelka.
+type LegacyImportResult struct {
+	Subs     int      `json:"subs"`
+	Servers  int      `json:"servers"`
+	Rules    int      `json:"rules"`
+	Selected *string  `json:"selected"`
+	Mode     string   `json:"mode"`
+	Failed   []string `json:"failed"` // subscriptions that did not download
+}
+
+// Connection is one live connection in the "connections" notification.
+type Connection struct {
+	ID      string   `json:"id"`
+	Process string   `json:"process"`
+	Host    string   `json:"host"`
+	Dest    string   `json:"dest"`
+	Route   string   `json:"route"` // vpn | direct
+	Chain   []string `json:"chain"`
+	Up      int64    `json:"up"`
+	Down    int64    `json:"down"`
+	Started string   `json:"started"`
+}
+
+// TrafficSample is the "traffic" notification: bytes per second.
+type TrafficSample struct {
+	T    time.Time `json:"t"`
+	Up   int64     `json:"up"`
+	Down int64     `json:"down"`
+}
+
+type RulesProcessesResult struct {
+	Processes []ProcessInfo `json:"processes"`
+}

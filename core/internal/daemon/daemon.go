@@ -7,17 +7,20 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"strelka/internal/clash"
+	"strelka/internal/confgen"
 	"strelka/internal/engine"
 	"strelka/internal/ipc"
+	"strelka/internal/profile"
+	"strelka/internal/rules"
+	"strelka/internal/stats"
 	"strelka/internal/store"
 	"strelka/proto"
 )
@@ -29,20 +32,32 @@ const Version = "0.1.0"
 // that come faster are merged into the next one.
 const minStateInterval = 100 * time.Millisecond
 
-const engineName = "sing-box"
+const (
+	boxName  = "sing-box"
+	xrayName = "xray"
+)
 
 // Options configure a daemon. The zero value of every optional field is the
-// production behaviour; tests override the engine command and the timings.
+// production behaviour; tests override the engine commands and the timings.
 type Options struct {
 	Paths store.Paths
 
-	// Config is the ready engine config to start from. Empty means
-	// run/config.json in the data folder. Stage 02 replaces this with a
-	// config built from the profile.
-	Config string
+	// NoTUN builds configs without the TUN, with a local proxy instead: the
+	// development mode that needs no admin rights and leaves a VPN already
+	// running on the machine alone.
+	NoTUN bool
 
-	// Launch overrides how the engine is started for a prepared config.
-	Launch func(configPath string) engine.Launch
+	// Launch and LaunchXray override how the engines are started for a
+	// prepared config. port is the first local port Xray listens on.
+	Launch     func(configPath string) engine.Launch
+	LaunchXray func(configPath string, port int) engine.Launch
+
+	// CheckConfig and CheckXray vet a config before it is used; nil runs
+	// the engines' own checks.
+	CheckConfig func(ctx context.Context, path string) error
+	CheckXray   func(ctx context.Context, path string) error
+	// PortFree tells whether a local port can be given to Xray.
+	PortFree func(port int) bool
 
 	Policy       engine.Policy
 	ReadyTimeout time.Duration
@@ -68,14 +83,39 @@ type rpcReply struct {
 	err    *proto.Error
 }
 
+// engEvent is a supervisor's observation, labelled with the engine it is about.
+type engEvent struct {
+	name string
+	ev   engine.Event
+}
+
+// loopFunc is work a goroutine hands back to the loop: the only way anything
+// outside the loop touches the state.
+type loopFunc func()
+
+// ping is the last delay test of a server.
+type ping struct {
+	ms    int
+	at    time.Time
+	alive bool
+}
+
 // Daemon is one running service.
 type Daemon struct {
 	opts Options
 	srv  *ipc.Server
-	sup  *engine.Supervisor
+	sup  *engine.Supervisor // sing-box
+	xsup *engine.Supervisor // the Xray helper
 
-	inbox chan any      // rpcCall and engine.Event
+	inbox chan any      // rpcCall, engEvent and loopFunc
 	done  chan struct{} // closed when the loop has exited
+
+	// Shared with the supervisors' goroutines and the poller.
+	plan        atomic.Pointer[plan]         // what the next engine start is built from
+	api         atomic.Pointer[clash.Client] // the running sing-box's Clash API
+	live        atomic.Bool                  // phase is "on": the API may be asked
+	checkedBox  atomic.Uint64                // plan generation whose config passed the check
+	checkedXray atomic.Uint64
 
 	// Everything below belongs to the loop goroutine.
 	st         proto.State
@@ -85,12 +125,26 @@ type Daemon struct {
 	flush      *time.Timer
 	flushArmed bool
 	everOn     bool // the engine was ready at least once since the last start command
+
+	prof    *profile.Profile
+	rules   rules.Set
+	stats   *stats.Stats
+	pings   map[string]ping
+	planGen uint64
+
+	boxReady   bool
+	xrayReady  bool
+	xrayWanted bool // the current plan has servers that go through Xray
+
+	phaseBusy string // starting | stopping
+	job       string // updating_subs | testing
+	autoInfo  map[string]autoListInfo
 }
 
-// New prepares a daemon: folders, the saved desired state, the journal. It
-// also clears engine processes a previous daemon may have left behind. The
-// caller should hold the channel's listener by now, so that a second daemon
-// fails on the channel before it gets to kill the first one's engine.
+// New prepares a daemon: folders, the saved state, the profile, the rules.
+// It also clears engine processes a previous daemon may have left behind.
+// The caller should hold the channel's listener by now, so that a second
+// daemon fails on the channel before it gets to kill the first one's engine.
 func New(opts Options) (*Daemon, error) {
 	if opts.Logf == nil {
 		opts.Logf = func(string, ...any) {}
@@ -99,10 +153,12 @@ func New(opts Options) (*Daemon, error) {
 		return nil, fmt.Errorf("data folder: %w", err)
 	}
 	d := &Daemon{
-		opts:  opts,
-		inbox: make(chan any, 256),
-		done:  make(chan struct{}),
-		st:    proto.NewState(Version),
+		opts:     opts,
+		inbox:    make(chan any, 256),
+		done:     make(chan struct{}),
+		st:       proto.NewState(Version),
+		pings:    map[string]ping{},
+		autoInfo: map[string]autoListInfo{},
 	}
 
 	saved, err := store.LoadJSON(opts.Paths.DesiredFile(), desiredFile{Desired: proto.DesiredOff})
@@ -114,97 +170,85 @@ func New(opts Options) (*Daemon, error) {
 		d.st.VPN.Desired = proto.DesiredOn
 	}
 
-	exe := opts.Paths.Engine(engineName)
-	if n, err := engine.KillByPath(exe); err != nil {
-		opts.Logf("looking for stray %s: %v", engineName, err)
-	} else if n > 0 {
-		opts.Logf("ended %d stray %s left by a previous run (%s)", n, engineName, exe)
+	settings, err := store.LoadJSON(opts.Paths.SettingsFile(), proto.DefaultSettings())
+	if err != nil {
+		opts.Logf("settings unreadable, using defaults: %v", err)
+	}
+	d.st.Settings = cleanSettings(settings)
+	d.st.Guard.Enabled, d.st.Guard.AllowLAN = d.st.Settings.Guard, d.st.Settings.AllowLAN
+
+	if d.prof, err = profile.Load(opts.Paths.ProfileFile()); err != nil {
+		// The file holds the user's subscriptions: never overwrite one we
+		// could not read. Set it aside and start empty.
+		aside := opts.Paths.ProfileFile() + ".broken"
+		opts.Logf("profile unreadable (%v), moved to %s", err, aside)
+		os.Rename(opts.Paths.ProfileFile(), aside)
+	}
+	if d.rules, err = rules.Ensure(opts.Paths.RulesDir()); err != nil {
+		return nil, fmt.Errorf("rules folder: %w", err)
+	}
+	if err := confgen.WriteAutoLists(opts.Paths.RulesDir()); err != nil {
+		return nil, fmt.Errorf("rules folder: %w", err)
+	}
+	d.stats = stats.Load(opts.Paths.StatsFile())
+
+	for _, name := range []string{boxName, xrayName} {
+		exe := opts.Paths.Engine(name)
+		if n, err := engine.KillByPath(exe); err != nil {
+			opts.Logf("looking for stray %s: %v", name, err)
+		} else if n > 0 {
+			opts.Logf("ended %d stray %s left by a previous run (%s)", n, name, exe)
+		}
 	}
 
 	d.journal = openJournal(opts.Paths.Journal())
 	d.srv = ipc.NewServer(d.handle)
-	d.sup = engine.New(engine.Config{
-		Name:         engineName,
-		Prepare:      d.prepare,
-		LogFile:      opts.Paths.EngineLog(engineName),
-		Policy:       opts.Policy,
-		ReadyTimeout: opts.ReadyTimeout,
-		StopGrace:    opts.StopGrace,
+	d.sup = d.supervise(boxName, d.prepareBox)
+	d.xsup = d.supervise(xrayName, d.prepareXray)
+
+	d.prof.FixSelection()
+	d.replan()
+	d.refresh()
+	return d, nil
+}
+
+func (d *Daemon) supervise(name string, prepare func() (engine.Launch, func(context.Context) error, error)) *engine.Supervisor {
+	return engine.New(engine.Config{
+		Name:         name,
+		Prepare:      prepare,
+		LogFile:      d.opts.Paths.EngineLog(name),
+		Policy:       d.opts.Policy,
+		ReadyTimeout: d.opts.ReadyTimeout,
+		StopGrace:    d.opts.StopGrace,
 		OnEvent: func(ev engine.Event) {
 			select {
-			case d.inbox <- ev:
+			case d.inbox <- engEvent{name: name, ev: ev}:
 			case <-d.done:
 			}
 		},
 		OnLine: func(line string) {
 			d.srv.Publish(proto.TopicLog, proto.LogLine{
-				T: time.Now().UTC(), Source: engineName, Level: engine.Level(line), Line: line,
+				T: time.Now().UTC(), Source: name, Level: engine.Level(line), Line: line,
 			})
 		},
 	})
-	return d, nil
 }
 
-// prepare runs before every engine start, in the supervisor's goroutine. It
-// reads only immutable options, never the loop's state.
-func (d *Daemon) prepare() (engine.Launch, func(context.Context) error, error) {
-	src := d.opts.Config
-	if src == "" {
-		src = d.opts.Paths.RunConfig()
+// post hands work to the loop from another goroutine.
+func (d *Daemon) post(fn func()) {
+	select {
+	case d.inbox <- loopFunc(fn):
+	case <-d.done:
 	}
-	raw, err := os.ReadFile(src)
-	if err != nil {
-		reason := engine.FailConfig
-		if errors.Is(err, fs.ErrNotExist) {
-			reason = engine.FailMissing
-		}
-		return engine.Launch{}, nil, &engine.PrepareError{Reason: reason, Err: err}
-	}
-	// A fresh port and secret every time: yesterday's port may sit in a
-	// range Windows reserved overnight, and nobody else needs the secret.
-	port, err := engine.FreePort()
-	if err != nil {
-		return engine.Launch{}, nil, err
-	}
-	secret, err := engine.NewSecret()
-	if err != nil {
-		return engine.Launch{}, nil, err
-	}
-	controller := fmt.Sprintf("127.0.0.1:%d", port)
-	patched, err := patchConfig(raw, controller, secret)
-	if err != nil {
-		return engine.Launch{}, nil, &engine.PrepareError{Reason: engine.FailConfig, Err: err}
-	}
-	cfgPath := d.opts.Paths.RunConfig()
-	if err := store.WriteAtomic(cfgPath, patched, 0o600); err != nil {
-		return engine.Launch{}, nil, err
-	}
-
-	var l engine.Launch
-	if d.opts.Launch != nil {
-		l = d.opts.Launch(cfgPath)
-	} else {
-		l = engine.Launch{
-			Exe: d.opts.Paths.Engine(engineName),
-			// --disable-color: stderr is a pipe read by the daemon, not a terminal.
-			Args: []string{"run", "-c", cfgPath, "-D", d.opts.Paths.Data, "--disable-color"},
-			Dir:  d.opts.Paths.Data,
-		}
-	}
-	api := clash.New(controller, secret)
-	ready := func(ctx context.Context) error {
-		_, err := api.Version(ctx)
-		return err
-	}
-	return l, ready, nil
 }
 
 // Run serves clients on l and runs the loop until ctx is cancelled, then
-// stops the engine and returns. The desired state is not touched on the way
-// out: the next run picks up where this one left.
+// stops the engines and returns. The desired state is not touched on the
+// way out: the next run picks up where this one left.
 func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 	served := make(chan error, 1)
 	go func() { served <- d.srv.Serve(l) }()
+	go d.pollEngine()
 
 	d.loop(ctx)
 
@@ -213,6 +257,7 @@ func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 	l.Close()
 	d.srv.Close()
 	d.sup.Close()
+	d.xsup.Close()
 	d.journal.close()
 	return <-served
 }
@@ -224,9 +269,19 @@ func (d *Daemon) loop(ctx context.Context) {
 
 	d.log(proto.CatSystem, proto.LevelInfo, "Служба запущена.")
 	if d.st.VPN.Desired == proto.DesiredOn && d.st.Settings.StartOnBoot {
-		d.beginStart()
+		if len(d.prof.Servers) == 0 {
+			d.setDesired(proto.DesiredOff)
+			d.log(proto.CatVPN, proto.LevelProblem, "VPN не включён: нет ни одного сервера. Добавь подписку.")
+		} else {
+			d.beginStart()
+		}
 	}
 	d.touch()
+
+	// Subscriptions refresh by themselves. The first look comes soon after
+	// the start, so a daemon that was off for a day catches up.
+	auto := time.NewTimer(15 * time.Second)
+	defer auto.Stop()
 
 	stopping := ctx.Done()
 	var giveUp <-chan time.Time
@@ -239,10 +294,14 @@ func (d *Daemon) loop(ctx context.Context) {
 					m.reply <- rpcReply{err: proto.Errorf(proto.CodeBusy, "Служба завершает работу.")}
 					continue
 				}
-				result, err := d.dispatch(m)
-				m.reply <- rpcReply{result: result, err: err}
-			case engine.Event:
+				result, err, later := d.dispatch(m)
+				if !later {
+					m.reply <- rpcReply{result: result, err: err}
+				}
+			case engEvent:
 				d.onEngine(m)
+			case loopFunc:
+				m()
 			}
 			if stopping == nil && d.st.VPN.Phase == proto.PhaseOff {
 				d.shutdown()
@@ -251,22 +310,27 @@ func (d *Daemon) loop(ctx context.Context) {
 		case <-d.flush.C:
 			d.flushArmed = false
 			d.publish()
+		case <-auto.C:
+			auto.Reset(time.Minute)
+			if stopping != nil {
+				d.autoUpdate()
+			}
 		case <-stopping:
 			stopping = nil // handled once
 			if d.st.VPN.Phase == proto.PhaseOff {
 				d.shutdown()
 				return
 			}
-			d.opts.Logf("shutting down: stopping %s", engineName)
+			d.opts.Logf("shutting down: stopping the engines")
 			d.setPhase(proto.PhaseStopping)
 			d.setBusy(proto.BusyStopping)
 			d.touch()
-			d.sup.Stop()
+			d.stopEngines()
 			// The supervisor kills after its own grace; this is the belt to
 			// those braces, so a bug there cannot hang the shutdown.
 			giveUp = time.After(15 * time.Second)
 		case <-giveUp:
-			d.opts.Logf("shutting down: %s did not confirm the stop", engineName)
+			d.opts.Logf("shutting down: %s did not confirm the stop", boxName)
 			d.shutdown()
 			return
 		}
@@ -274,6 +338,7 @@ func (d *Daemon) loop(ctx context.Context) {
 }
 
 func (d *Daemon) shutdown() {
+	d.live.Store(false)
 	d.log(proto.CatSystem, proto.LevelInfo, "Служба остановлена.")
 	d.publish()
 }
@@ -296,24 +361,28 @@ func (d *Daemon) handle(c *ipc.Conn, method string, params json.RawMessage) (any
 	}
 }
 
-func (d *Daemon) dispatch(c rpcCall) (any, *proto.Error) {
+// dispatch answers one call. later is true when the answer will come from
+// a job that is still running; the handler then owns c.reply.
+func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) {
 	switch c.method {
 	case proto.MethodHello:
-		return proto.HelloResult{Version: Version, Proto: proto.Version, OS: runtime.GOOS}, nil
+		return proto.HelloResult{Version: Version, Proto: proto.Version, OS: runtime.GOOS}, nil, false
 	case proto.MethodStateGet:
-		return d.snapshot(), nil
+		return d.snapshot(), nil, false
 	case proto.MethodStateSubscribe, proto.MethodStateUnsubscribe:
-		return d.subscription(c)
+		result, err = d.subscription(c)
 	case proto.MethodVPNStart:
-		return d.vpnStart()
+		result, err = d.vpnStart()
 	case proto.MethodVPNStop:
-		return d.vpnStop()
+		result, err = d.vpnStop()
 	case proto.MethodVPNRestart:
-		return d.vpnRestart()
+		result, err = d.vpnRestart()
 	case proto.MethodEngineStatus:
-		return d.engineStatus(), nil
+		result = d.engineStatus()
+	default:
+		return d.dispatchProfile(c)
 	}
-	return nil, proto.Errorf(proto.CodeMethodNotFound, "Служба не знает метод «%s».", c.method)
+	return result, err, false
 }
 
 func (d *Daemon) subscription(c rpcCall) (any, *proto.Error) {
@@ -352,6 +421,9 @@ func (d *Daemon) vpnStart() (any, *proto.Error) {
 		d.setDesired(proto.DesiredOn)
 		return nil, nil
 	}
+	if len(d.prof.Servers) == 0 {
+		return nil, proto.Errorf(proto.CodeNoServers, "Нет ни одного сервера. Сначала добавь подписку.")
+	}
 	d.setDesired(proto.DesiredOn)
 	d.beginStart()
 	return nil, nil
@@ -366,7 +438,7 @@ func (d *Daemon) vpnStop() (any, *proto.Error) {
 	d.setPhase(proto.PhaseStopping)
 	d.setBusy(proto.BusyStopping)
 	d.touch()
-	d.sup.Stop()
+	d.stopEngines()
 	return nil, nil
 }
 
@@ -380,18 +452,39 @@ func (d *Daemon) vpnRestart() (any, *proto.Error) {
 		return nil, proto.Errorf(proto.CodeBusy, "VPN ещё выключается. Подожди пару секунд и попробуй снова.")
 	}
 	d.log(proto.CatVPN, proto.LevelInfo, "Перезапускаю VPN.")
-	d.markStarting()
-	d.sup.Restart()
+	d.restartEngines()
 	return nil, nil
 }
 
+// beginStart brings the engines up from a standstill.
 func (d *Daemon) beginStart() {
+	d.replan()
+	d.restartEngines()
+}
+
+// restartEngines starts both engines afresh from the current plan. Restart
+// on an idle supervisor is a start, and on a running one it guarantees a new
+// Ready event, which a plain Start would not give.
+func (d *Daemon) restartEngines() {
 	d.markStarting()
-	d.sup.Start()
+	d.sup.Restart()
+	if d.xrayWanted {
+		d.xsup.Restart()
+	} else {
+		d.xsup.Stop()
+	}
+}
+
+func (d *Daemon) stopEngines() {
+	d.live.Store(false)
+	d.sup.Stop()
+	d.xsup.Stop()
 }
 
 func (d *Daemon) markStarting() {
 	d.everOn = false
+	d.boxReady, d.xrayReady = false, false
+	d.live.Store(false)
 	d.setPhase(proto.PhaseStarting)
 	d.setBusy(proto.BusyStarting)
 	d.st.VPN.FailReason, d.st.VPN.FailText = nil, nil
@@ -399,48 +492,54 @@ func (d *Daemon) markStarting() {
 }
 
 func (d *Daemon) engineStatus() proto.EngineStatusResult {
-	st := d.sup.Status()
-	es := proto.EngineStatus{
-		Name:     engineName,
-		Path:     d.opts.Paths.Engine(engineName),
-		Running:  st.Running,
-		PID:      st.PID,
-		Restarts: st.Restarts,
+	one := func(name string, sup *engine.Supervisor) proto.EngineStatus {
+		st := sup.Status()
+		es := proto.EngineStatus{
+			Name:     name,
+			Path:     d.opts.Paths.Engine(name),
+			Running:  st.Running,
+			PID:      st.PID,
+			Restarts: st.Restarts,
+		}
+		if st.Running {
+			since := st.Since.UTC()
+			es.Since = &since
+		}
+		return es
 	}
-	if st.Running {
-		since := st.Since.UTC()
-		es.Since = &since
+	res := proto.EngineStatusResult{Engines: []proto.EngineStatus{one(boxName, d.sup)}}
+	// The helper is listed only while it has work: an idle line for an
+	// engine that is not supposed to run reads like a fault.
+	if x := one(xrayName, d.xsup); d.xrayWanted || x.Running {
+		res.Engines = append(res.Engines, x)
 	}
-	return proto.EngineStatusResult{Engines: []proto.EngineStatus{es}}
+	return res
 }
 
-// onEngine applies one observation from the supervisor.
-func (d *Daemon) onEngine(ev engine.Event) {
+// onEngine applies one observation from a supervisor.
+func (d *Daemon) onEngine(m engEvent) {
+	if m.name == xrayName {
+		d.onXray(m.ev)
+		return
+	}
+	ev := m.ev
 	switch ev.Kind {
 	case engine.Started:
-		d.opts.Logf("%s started, pid %d", engineName, ev.PID)
+		d.opts.Logf("%s started, pid %d", boxName, ev.PID)
 
 	case engine.Ready:
-		d.opts.Logf("%s is ready, pid %d", engineName, ev.PID)
-		if d.st.VPN.Phase == proto.PhaseStopping {
-			return // a stop is already on its way to this process
-		}
-		text := "VPN включён."
-		if d.everOn {
-			text = "VPN снова работает."
-		}
-		d.everOn = true
-		d.setPhase(proto.PhaseOn)
-		d.setBusy("")
-		d.log(proto.CatVPN, proto.LevelInfo, text)
-		d.touch()
+		d.opts.Logf("%s is ready, pid %d", boxName, ev.PID)
+		d.boxReady = true
+		d.maybeOn()
 
 	case engine.Exited:
 		d.opts.Logf("%s exited: code %d, uptime %v, not ready %v, retry in %v",
-			engineName, ev.ExitCode, ev.Uptime.Round(time.Millisecond), ev.NotReady, ev.RetryIn)
+			boxName, ev.ExitCode, ev.Uptime.Round(time.Millisecond), ev.NotReady, ev.RetryIn)
 		for _, line := range lastLines(ev.Tail, 5) {
 			d.opts.Logf("    %s", line)
 		}
+		d.boxReady = false
+		d.live.Store(false)
 		if d.st.VPN.Phase == proto.PhaseStopping {
 			return
 		}
@@ -465,9 +564,12 @@ func (d *Daemon) onEngine(ev engine.Event) {
 			how = "by force: it did not take the polite request"
 		}
 		if ev.PID != 0 {
-			d.opts.Logf("%s stopped %s, pid %d", engineName, how, ev.PID)
+			d.opts.Logf("%s stopped %s, pid %d", boxName, how, ev.PID)
 		}
-		if d.st.VPN.Phase == proto.PhaseOff {
+		d.boxReady = false
+		// In "failed" the engine was stopped because the helper gave up;
+		// the failure, not this stop, is what the user must see.
+		if d.st.VPN.Phase == proto.PhaseOff || d.st.VPN.Phase == proto.PhaseFailed {
 			return
 		}
 		d.setPhase(proto.PhaseOff)
@@ -477,7 +579,9 @@ func (d *Daemon) onEngine(ev engine.Event) {
 		d.touch()
 
 	case engine.Failed:
-		d.opts.Logf("%s failed: %s: %v", engineName, ev.Reason, ev.Err)
+		d.opts.Logf("%s failed: %s: %v", boxName, ev.Reason, ev.Err)
+		d.boxReady = false
+		d.xsup.Stop()
 		if d.st.VPN.Phase == proto.PhaseStopping {
 			// Giving up is as good as stopped for someone who asked to stop.
 			d.setPhase(proto.PhaseOff)
@@ -486,21 +590,112 @@ func (d *Daemon) onEngine(ev engine.Event) {
 			d.touch()
 			return
 		}
-		reason, text := ev.Reason, failText(ev.Reason)
-		d.setPhase(proto.PhaseFailed)
-		d.setBusy("")
-		d.st.VPN.FailReason, d.st.VPN.FailText = &reason, &text
-		d.log(proto.CatVPN, proto.LevelCritical, "VPN не запускается. "+text)
-		d.touch()
+		d.fail(ev.Reason, failText(ev.Reason))
 	}
+}
+
+// onXray applies an observation about the helper. sing-box is the VPN; the
+// helper only matters for the servers that go through it, so its trouble
+// does not take the phase down once the VPN is on.
+func (d *Daemon) onXray(ev engine.Event) {
+	phase := d.st.VPN.Phase
+	switch ev.Kind {
+	case engine.Started:
+		d.opts.Logf("%s started, pid %d", xrayName, ev.PID)
+
+	case engine.Ready:
+		d.opts.Logf("%s is ready, pid %d", xrayName, ev.PID)
+		d.xrayReady = true
+		if phase == proto.PhaseOn {
+			d.log(proto.CatVPN, proto.LevelInfo, "Помощник Xray снова работает.")
+			d.setVerdict(proto.VerdictSettling)
+			d.touch()
+			return
+		}
+		d.maybeOn()
+
+	case engine.Exited:
+		d.opts.Logf("%s exited: code %d, uptime %v, retry in %v", xrayName, ev.ExitCode, ev.Uptime.Round(time.Millisecond), ev.RetryIn)
+		for _, line := range lastLines(ev.Tail, 5) {
+			d.opts.Logf("    %s", line)
+		}
+		d.xrayReady = false
+		if phase == proto.PhaseStopping || phase == proto.PhaseOff || phase == proto.PhaseFailed {
+			return
+		}
+		what := "Помощник Xray неожиданно остановился."
+		if ev.RetryIn > 0 {
+			what += fmt.Sprintf(" Перезапускаю через %s.", russianDelay(ev.RetryIn))
+		}
+		d.log(proto.CatVPN, proto.LevelProblem, what)
+		if phase == proto.PhaseOn {
+			d.setVerdict(proto.VerdictHelperDown)
+		}
+		d.touch()
+
+	case engine.Stopped:
+		d.xrayReady = false
+		if ev.PID != 0 {
+			d.opts.Logf("%s stopped, pid %d, forced %v", xrayName, ev.PID, ev.Forced)
+		}
+
+	case engine.Failed:
+		d.opts.Logf("%s failed: %s: %v", xrayName, ev.Reason, ev.Err)
+		d.xrayReady = false
+		if !d.xrayWanted {
+			// A start that the next plan made pointless: its stop is queued.
+			return
+		}
+		switch phase {
+		case proto.PhaseStarting:
+			// The selected server may be one of Xray's; coming up without
+			// the helper would be "on" with no traffic.
+			d.sup.Stop()
+			d.fail(ev.Reason, "Не запускается помощник Xray, через который работает часть серверов. Подробности — в журнале.")
+		case proto.PhaseOn, proto.PhaseRecovering:
+			d.log(proto.CatVPN, proto.LevelCritical, "Помощник Xray не запускается. Серверы, которые работают через него, недоступны.")
+			d.setVerdict(proto.VerdictHelperDown)
+			d.touch()
+		}
+	}
+}
+
+// maybeOn moves to "on" once every engine the plan needs is ready.
+func (d *Daemon) maybeOn() {
+	if !d.boxReady || (d.xrayWanted && !d.xrayReady) {
+		return
+	}
+	if d.st.VPN.Phase != proto.PhaseStarting && d.st.VPN.Phase != proto.PhaseRecovering {
+		return // a stop is already on its way, or the VPN is on already
+	}
+	text := "VPN включён."
+	if d.everOn {
+		text = "VPN снова работает."
+	}
+	d.everOn = true
+	d.setPhase(proto.PhaseOn)
+	d.setBusy("")
+	d.log(proto.CatVPN, proto.LevelInfo, text)
+	d.live.Store(true)
+	d.syncEngine()
+	d.touch()
+}
+
+func (d *Daemon) fail(reason, text string) {
+	d.live.Store(false)
+	d.setPhase(proto.PhaseFailed)
+	d.setBusy("")
+	d.st.VPN.FailReason, d.st.VPN.FailText = &reason, &text
+	d.log(proto.CatVPN, proto.LevelCritical, "VPN не запускается. "+text)
+	d.touch()
 }
 
 func failText(reason string) string {
 	switch reason {
 	case engine.FailMissing:
-		return "Не хватает файлов Стрелки: нет движка sing-box или его настроек. Переустанови приложение."
+		return "Не хватает файлов Стрелки: нет движка sing-box. Переустанови приложение."
 	case engine.FailConfig:
-		return "Настройки VPN повреждены, запустить с ними не получается."
+		return "Движок не принял настройки VPN. Подробности — в журнале."
 	case engine.FailCrashLoop:
 		return "VPN падает сразу после запуска. Подробности — в журнале."
 	}
@@ -524,7 +719,7 @@ func lastLines(lines []string, n int) []string {
 
 // setPhase moves the phase and the fields that are functions of it. Health
 // proper arrives in stage 03; until then the verdict only says what the
-// engine itself is doing.
+// engines themselves are doing.
 func (d *Daemon) setPhase(phase string) {
 	if d.st.VPN.Phase == phase {
 		return
@@ -542,13 +737,36 @@ func (d *Daemon) setPhase(phase string) {
 	case proto.PhaseFailed:
 		verdict = proto.VerdictEngineFailed
 	}
+	d.setVerdict(verdict)
+}
+
+func (d *Daemon) setVerdict(verdict string) {
 	if d.st.Health.Verdict != verdict {
+		now := time.Now().UTC().Truncate(time.Second)
 		d.st.Health.Verdict = verdict
 		d.st.Health.Since = &now
 	}
 }
 
+// setBusy records what the phase is busy with; setJob, what a background
+// job is. They are kept apart because they end independently: the engine
+// becoming ready must not hide that subscriptions are still downloading.
 func (d *Daemon) setBusy(busy string) {
+	d.phaseBusy = busy
+	d.applyBusy()
+}
+
+func (d *Daemon) setJob(job string) {
+	d.job = job
+	d.applyBusy()
+	d.touch()
+}
+
+func (d *Daemon) applyBusy() {
+	busy := d.phaseBusy
+	if busy == "" {
+		busy = d.job
+	}
 	if busy == "" {
 		d.st.Busy = nil
 		return
@@ -578,7 +796,7 @@ func (d *Daemon) log(cat, level, text string) {
 func (d *Daemon) touch() {
 	d.st.Rev++
 	d.dirty = true
-	if d.flushArmed {
+	if d.flushArmed || d.flush == nil {
 		return
 	}
 	wait := minStateInterval - time.Since(d.lastSent)

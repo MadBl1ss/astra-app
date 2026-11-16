@@ -1,6 +1,6 @@
 // strelkad is the Strelka daemon. At this stage it runs in a console only:
 //
-//	strelkad run --data DIR --engines DIR [--config FILE] [--pipe NAME]
+//	strelkad run --data DIR --engines DIR [--no-tun] [--pipe NAME]
 //
 // Running under the Windows service manager and systemd arrives with the
 // installer.
@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"strelka/internal/confgen"
 	"strelka/internal/daemon"
 	"strelka/internal/ipc"
 	"strelka/internal/store"
@@ -46,12 +47,13 @@ func realMain(args []string) int {
 func usage() {
 	fmt.Fprint(os.Stderr, `Служба Стрелки.
 
-  strelkad run --data ПАПКА --engines ПАПКА [--config ФАЙЛ] [--pipe ИМЯ]
+  strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--pipe ИМЯ]
   strelkad version
 
   --data     папка данных службы (в разработке — .dev)
   --engines  папка с sing-box и xray
-  --config   готовый конфиг sing-box; без флага берётся run/config.json из папки данных
+  --no-tun   без сетевого адаптера: вместо него локальный прокси на 127.0.0.1:20808.
+             Не требует прав администратора и не мешает VPN, который уже работает
   --pipe     имя канала; по умолчанию strelka-dev, чтобы не мешать установленной службе
 `)
 }
@@ -61,7 +63,7 @@ func run(args []string) int {
 	fs.Usage = usage
 	data := fs.String("data", "", "")
 	engines := fs.String("engines", "", "")
-	config := fs.String("config", "", "")
+	noTUN := fs.Bool("no-tun", false, "")
 	pipe := fs.String("pipe", ipc.DevName, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -73,9 +75,6 @@ func run(args []string) int {
 	// Absolute paths: the engine is started with the data folder as its
 	// working directory, and stray processes are matched by full path.
 	paths := store.Paths{Data: abs(*data), Engines: abs(*engines)}
-	if *config != "" {
-		*config = abs(*config)
-	}
 
 	logf := func(format string, a ...any) {
 		fmt.Printf("%s  %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, a...))
@@ -88,7 +87,7 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "Канал %s не открылся: %v\nПохоже, служба уже запущена.\n", ipc.Address(*pipe), err)
 		return 1
 	}
-	d, err := daemon.New(daemon.Options{Paths: paths, Config: *config, Logf: logf})
+	d, err := daemon.New(daemon.Options{Paths: paths, NoTUN: *noTUN, Logf: logf})
 	if err != nil {
 		l.Close()
 		fmt.Fprintf(os.Stderr, "Служба не запустилась: %v\n", err)
@@ -105,6 +104,9 @@ func run(args []string) int {
 	}()
 
 	logf("strelkad %s: channel %s, data %s, engines %s", daemon.Version, ipc.Address(*pipe), paths.Data, paths.Engines)
+	if *noTUN {
+		logf("no TUN: traffic enters through the local proxy on 127.0.0.1:%d (or settings.localProxyPort)", confgen.DevProxyPort)
+	}
 	if err := d.Run(ctx, l); err != nil {
 		fmt.Fprintf(os.Stderr, "Служба остановилась с ошибкой: %v\n", err)
 		return 1

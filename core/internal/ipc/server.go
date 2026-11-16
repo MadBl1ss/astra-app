@@ -128,6 +128,20 @@ func (s *Server) Clients() int {
 	return len(s.conns)
 }
 
+// Subscribers is how many clients listen to topic. It lets a publisher skip
+// the work of producing something nobody will read.
+func (s *Server) Subscribers(topic string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for c := range s.conns {
+		if c.subscribed(topic) {
+			n++
+		}
+	}
+	return n
+}
+
 // Publish sends a notification to every client subscribed to topic. The
 // method name of the notification is the topic itself. It never blocks: a
 // client whose queue is full is disconnected.

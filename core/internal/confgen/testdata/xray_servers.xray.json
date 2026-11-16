@@ -1,0 +1,111 @@
+{
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 17400,
+      "protocol": "socks",
+      "settings": {
+        "ip": "127.0.0.1",
+        "udp": true
+      },
+      "tag": "in-t-LV"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 17401,
+      "protocol": "socks",
+      "settings": {
+        "ip": "127.0.0.1",
+        "udp": true
+      },
+      "tag": "in-t-SE"
+    }
+  ],
+  "log": {
+    "access": "none",
+    "loglevel": "warning"
+  },
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "lv.example.com",
+            "port": 443,
+            "users": [
+              {
+                "encryption": "none",
+                "id": "33333333-3333-4333-8333-333333333333"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "lv.example.com"
+        },
+        "xhttpSettings": {
+          "host": "",
+          "mode": "auto",
+          "path": "/x"
+        }
+      },
+      "tag": "t-LV"
+    },
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "se.example.com",
+            "port": 443,
+            "users": [
+              {
+                "encryption": "none",
+                "flow": "xtls-rprx-vision",
+                "id": "22222222-2222-4222-8222-222222222222"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "raw",
+        "realitySettings": {
+          "fingerprint": "chrome",
+          "publicKey": "TWFkZVVwUHVibGljS2V5TWFkZVVwUHVibGljS2V5MDA",
+          "serverName": "www.example.org",
+          "shortId": "ab12"
+        },
+        "security": "reality"
+      },
+      "tag": "t-SE"
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "inboundTag": [
+          "in-t-LV"
+        ],
+        "outboundTag": "t-LV",
+        "type": "field"
+      },
+      {
+        "inboundTag": [
+          "in-t-SE"
+        ],
+        "outboundTag": "t-SE",
+        "type": "field"
+      }
+    ]
+  }
+}

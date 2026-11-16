@@ -28,6 +28,12 @@ const (
 	ModeGlobal = "global"
 )
 
+// Who talks to the server: the engine itself or the Xray helper.
+const (
+	ViaSingBox = "sing-box"
+	ViaXray    = "xray"
+)
+
 // Fail reasons for vpn.failReason.
 const (
 	FailConfig    = "config"
@@ -224,6 +230,9 @@ type JournalEntry struct {
 
 const (
 	CatVPN    = "vpn"
+	CatServer = "server"
+	CatSubs   = "subs"
+	CatRules  = "rules"
 	CatSystem = "system"
 
 	LevelInfo     = "info"
