@@ -101,8 +101,11 @@ export function pingOf(server: Server, s: State, now: number): PingView {
   if (chosen && (s.health.verdict === 'server_down' || s.health.verdict === 'all_servers_down')) {
     return { text: t.noAnswer, tone: 'warn', title: t.noAnswer };
   }
-  const ping = chosen && s.server.ping !== null ? s.server.ping : server.ping;
-  const at = chosen && s.server.pingAt ? s.server.pingAt : server.pingAt;
+  // Whichever answer is fresher: the constant probe of the selected server
+  // or the last test of all servers.
+  const probe = chosen && s.server.ping !== null && s.server.pingAt !== null && (!server.pingAt || Date.parse(s.server.pingAt) > Date.parse(server.pingAt));
+  const ping = probe ? s.server.ping : server.ping;
+  const at = probe ? s.server.pingAt : server.pingAt;
   if (!at) return { text: '—', tone: 'none', title: t.pingNever };
   if (ping === null || (!chosen && !server.alive)) return { text: '—', tone: 'none', title: t.pingNone(ago(at, now)) };
   return { text: ru.units.ms(ping), tone: pingTone(ping), title: t.pingAt(ping, ago(at, now)) };

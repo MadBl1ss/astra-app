@@ -255,7 +255,7 @@
 
   .route {
     flex: none;
-    width: 66px;
+    width: 58px;
     font-size: var(--fs-cap);
     text-align: right;
   }
@@ -275,7 +275,7 @@
 
   .act {
     flex: none;
-    width: 84px;
+    min-width: 74px;
     min-height: 24px;
     padding: 1px 6px;
     border: 1px solid var(--line);
@@ -291,7 +291,7 @@
 
   .act-gap {
     flex: none;
-    width: 84px;
+    width: 74px;
   }
 
   .hosts {

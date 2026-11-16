@@ -322,10 +322,12 @@
     flex-direction: column;
     gap: var(--s3);
     min-height: 0;
+    container-type: inline-size;
   }
 
   .add {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--s2);
   }
 
@@ -348,6 +350,13 @@
 
   .spacer {
     flex: 1;
+  }
+
+  /* In the narrow window the select's own text says what it is. */
+  @container (max-width: 400px) {
+    .cap {
+      display: none;
+    }
   }
 
   .add :global(.btn),

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import Button from '../../components/Button.svelte';
   import Dialog from '../../components/Dialog.svelte';
   import Field from '../../components/Field.svelte';
@@ -15,6 +16,7 @@
   let name = $state('');
   let error = $state<string | null>(null);
   let busy = $state(false);
+  let input: HTMLInputElement | undefined = $state();
 
   const isSub = $derived(/^https?:\/\//i.test(link.trim()));
 
@@ -40,6 +42,9 @@
     } finally {
       busy = false;
     }
+    // The field was disabled while waiting and lost the focus; the fix is
+    // typed there.
+    if (error) void tick().then(() => input?.focus());
   }
 </script>
 
@@ -47,6 +52,7 @@
   <Field
     label={t.link}
     bind:value={link}
+    bind:input
     placeholder={t.placeholder}
     inputmode="url"
     mono

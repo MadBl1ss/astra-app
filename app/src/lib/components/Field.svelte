@@ -15,6 +15,7 @@
     hideLabel = false,
     placeholder = '',
     error = null,
+    invalid = false,
     note = null,
     icon,
     mono = false,
@@ -33,6 +34,8 @@
     hideLabel?: boolean;
     placeholder?: string;
     error?: string | null;
+    /** Marked wrong while the reason is said elsewhere (a narrow field in a row). */
+    invalid?: boolean;
     /** A quiet line under the field: how the value was understood, a hint. */
     note?: string | null;
     icon?: IconName;
@@ -60,7 +63,7 @@
 
 <div class="field" style:width>
   <label for={id} class="label" class:sr-only={hideLabel}>{label}</label>
-  <div class="box" class:bad={!!error} class:off={disabled}>
+  <div class="box" class:bad={!!error || invalid} class:off={disabled}>
     {#if icon}<span class="ico"><Icon name={icon} size={15} /></span>{/if}
     <input
       {id}
@@ -72,7 +75,7 @@
       {inputmode}
       spellcheck="false"
       autocomplete="off"
-      aria-invalid={error ? true : undefined}
+      aria-invalid={error || invalid ? true : undefined}
       aria-describedby={error || note ? `${id}-msg` : undefined}
       onkeydown={keydown}
       {onblur}
@@ -89,6 +92,7 @@
 <style>
   .field {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 5px;
     min-width: 0;
   }
@@ -130,8 +134,11 @@
     color: var(--muted);
   }
 
+  /* No width of its own: an input is twenty characters wide by default,
+     which would push a narrow field out of its box. */
   input {
     flex: 1;
+    width: 0;
     min-width: 0;
     height: 29px;
     padding: 0;

@@ -252,9 +252,10 @@ export function seedRules(scenario: string, now: number, bare: boolean): Rules {
   if (scenario === MANY) {
     const rnd = random(7);
     const words = ['stream', 'cloud', 'media', 'news', 'shop', 'play', 'data', 'mail', 'photo', 'chat', 'code', 'docs'];
-    for (let i = 0; i < 110; i++) {
-      vpn.suffixes.push(`${words[i % words.length]}${Math.floor(rnd() * 900 + 100)}.example.com`);
-    }
+    // A list holds every value once, as the daemon's lists do.
+    const sites = new Set<string>();
+    while (sites.size < 110) sites.add(`${words[sites.size % words.length]}${Math.floor(rnd() * 900 + 100)}.example.com`);
+    vpn.suffixes.push(...sites);
     vpn.suffixes.push('very-long-subdomain-name.of-some-cdn-provider.example-content-delivery.net');
     vpn.processes.push('Some Very Long Application Name Helper (Renderer).exe', 'obs64.exe', 'Spotify.exe');
     direct.processes.push('EpicGamesLauncher.exe', 'Battle.net.exe');
@@ -482,8 +483,8 @@ export function seedLongJournal(add: Add, servers: Server[], now: number): void 
     t += Math.floor(rnd() * 25 * 60_000) + 60_000;
     const roll = rnd();
     if (roll < 0.06) {
-      const id = `i-2026111${Math.floor(incident / 10)}-${(incident % 10) + 1}`;
-      incident++;
+      // Ids of their own: the scenario's other incidents are i-20261112-* and i-20261116-*.
+      const id = `i-20261110-${++incident}`;
       const server = name();
       const minutes = 1 + Math.floor(rnd() * 9);
       add(t, 'server', 'problem', `Сервер ${server} не отвечает. Интернет есть, другие серверы работают.`, id);
@@ -491,8 +492,8 @@ export function seedLongJournal(add: Add, servers: Server[], now: number): void 
       add(t + minutes * 60_000, 'server', 'info', `Сервер ${server} снова отвечает. Не работало ${minutes} мин.`, id);
       t += minutes * 60_000;
     } else if (roll < 0.09) {
-      const id = `i-2026111${Math.floor(incident / 10)}-${(incident % 10) + 1}`;
-      incident++;
+      // Ids of their own: the scenario's other incidents are i-20261112-* and i-20261116-*.
+      const id = `i-20261110-${++incident}`;
       const minutes = 1 + Math.floor(rnd() * 4);
       add(t, 'system', 'problem', 'Нет интернета. VPN заработает, когда сеть вернётся.', id);
       add(t + minutes * 60_000, 'system', 'info', `Интернет вернулся. Его не было ${minutes} мин.`, id);

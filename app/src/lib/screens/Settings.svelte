@@ -234,7 +234,7 @@
       <SettingRow
         label={t.proxy}
         note={shown.localProxyPort > 0 ? t.proxyNote(shown.localProxyPort) : t.proxyOffNote}
-        error={errors.localProxyPort}
+        error={portError ?? errors.localProxyPort}
       >
         {#snippet children()}
           {#if shown.localProxyPort > 0}
@@ -242,7 +242,7 @@
               label={t.port}
               hideLabel
               bind:value={portText}
-              error={portError}
+              invalid={portError !== null}
               inputmode="numeric"
               mono
               width="92px"
@@ -307,7 +307,7 @@
       </div>
       <SettingRow label={t.restart} note={restartable ? t.restartNote : t.restartOff}>
         {#snippet children()}
-          <Button icon="refresh" disabled={!restartable} onclick={() => daemon.rpc('vpn.restart')}>{t.restart}</Button>
+          <Button icon="refresh" disabled={!restartable} onclick={() => daemon.rpc('vpn.restart')}>{t.restartButton}</Button>
         {/snippet}
       </SettingRow>
       <SettingRow label={t.report} note={report.path ? report.path : t.reportNote}>
