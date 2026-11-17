@@ -51,6 +51,12 @@
       "secret": "made-up-secret"
     }
   },
+  "http_clients": [
+    {
+      "detour": "proxy",
+      "tag": "rule-sets"
+    }
+  ],
   "inbounds": [
     {
       "address": [
@@ -104,6 +110,7 @@
   "route": {
     "auto_detect_interface": true,
     "default_domain_resolver": "dns-direct",
+    "default_http_client": "rule-sets",
     "final": "direct",
     "rule_set": [
       {

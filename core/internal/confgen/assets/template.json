@@ -174,8 +174,15 @@
     ],
     "final": "direct",
     "auto_detect_interface": true,
-    "default_domain_resolver": "dns-direct"
+    "default_domain_resolver": "dns-direct",
+    "default_http_client": "rule-sets"
   },
+  "http_clients": [
+    {
+      "tag": "rule-sets",
+      "detour": "proxy"
+    }
+  ],
   "experimental": {
     "cache_file": {
       "enabled": true,
