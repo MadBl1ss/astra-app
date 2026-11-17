@@ -2,6 +2,8 @@ import {
   ErrorCode,
   PROTO,
   type Connection,
+  type DiagStep,
+  type LegacyImportResult,
   type Incident,
   type JournalCat,
   type JournalEntry,
@@ -18,6 +20,7 @@ import {
   type Settings,
   type Severity,
   type State,
+  type Toast,
   type Topic,
 } from '../proto';
 import { mock as text } from '../i18n/ru';
@@ -44,10 +47,12 @@ const fixtures = import.meta.glob<State>('../../../../core/proto/testdata/fixtur
 
 /** Scenario names: every fixture, the crowded profile, a daemon that does not answer. */
 export const OFFLINE = 'offline';
+/** A working VPN that says something of every kind, see #demoToasts. */
+export const TOASTS = 'toasts';
 
 export function scenarios(): string[] {
   const names = Object.keys(fixtures).map((path) => path.replace(/^.*\/|\.json$/g, ''));
-  return [...names.sort(), MANY, OFFLINE];
+  return [...names.sort(), MANY, OFFLINE, TOASTS];
 }
 
 function fixture(name: string): State | undefined {
@@ -127,6 +132,10 @@ export class MockTransport implements Transport {
   // Bytes per second through the VPN while it works; remembered from the
   // fixture so that a restart brings the same picture back.
   #vpnRate: { up: number; down: number };
+  // Toasts nobody listened to yet, as the daemon keeps them.
+  #held: Toast[] = [];
+  #diagBusy = false;
+  #legacyDir: string | null = null;
 
   constructor(scenario: string, options: { still?: boolean } = {}) {
     this.#reachable = scenario !== OFFLINE;
@@ -142,6 +151,8 @@ export class MockTransport implements Transport {
     this.#seedConns();
     // Like the daemon on its first run: the place is asked for at once.
     if (state.place === null && this.#reachable) setTimeout(() => this.#located(), 1500);
+    if (scenario === TOASTS) this.#demoToasts();
+    if (state.servers.length === 0) this.#legacyDir = text.legacyDir;
     setTimeout(() => this.#setStatus(this.#reachable ? 'connected' : 'disconnected'), 120);
     setInterval(() => this.#tick(), 1000);
   }
@@ -197,8 +208,14 @@ export class MockTransport implements Transport {
         return structuredClone(s);
       case 'state.subscribe': {
         for (const topic of p.topics as Topic[]) this.#topics.add(topic);
-        // The real daemon sends the current document right after subscribing.
+        // The real daemon sends the current document right after subscribing,
+        // and the toasts that waited for a listener.
         if ((p.topics as Topic[]).includes('state')) this.#later(0, () => this.#publishState());
+        if ((p.topics as Topic[]).includes('toast')) {
+          const held = this.#held;
+          this.#held = [];
+          setTimeout(() => held.forEach((t) => this.#toast(t)), 0);
+        }
         return {};
       }
       case 'state.unsubscribe':
@@ -298,6 +315,14 @@ export class MockTransport implements Transport {
             { name: 'xray', version: '26.3.27' },
           ],
         }));
+      case 'diag.run':
+        return this.#diagRun();
+      case 'legacy.detect':
+        // Only a fresh profile has an old Strelka next to it in the mock:
+        // that is where the first run offers to bring it over.
+        return this.#soon(300, () => ({ dir: this.#legacyDir, running: false }));
+      case 'legacy.import':
+        return this.#legacyImport(p.dir as string);
       case 'place.detect':
         return this.#soon(700, () => this.#located());
       case 'place.set': {
@@ -330,7 +355,7 @@ export class MockTransport implements Transport {
     const s = this.#state;
     if (s.servers.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
     this.#cancelTimers();
-    this.#closeIncidents(VPN_INCIDENTS);
+    this.#closeIncidents(VPN_INCIDENTS, 'close');
     s.vpn = { ...s.vpn, desired: 'on', phase: 'starting', since: null, failReason: null, failText: null };
     s.health = { ...s.health, verdict: 'settling', since: now(), hint: null };
     s.guard.blocking = false;
@@ -351,7 +376,7 @@ export class MockTransport implements Transport {
   #stop(): void {
     const s = this.#state;
     this.#cancelTimers();
-    this.#closeIncidents(VPN_INCIDENTS);
+    this.#closeIncidents(VPN_INCIDENTS, 'close');
     if (s.vpn.phase === 'off') {
       s.vpn.desired = 'off';
       this.#touch();
@@ -386,7 +411,7 @@ export class MockTransport implements Transport {
       return;
     }
     this.#cancelTimers();
-    this.#closeIncidents(['server_down']);
+    this.#closeIncidents(['server_down'], 'back');
     s.health = { ...s.health, verdict: 'settling', since: now(), hint: null };
     s.traffic.up = s.traffic.down = 0;
     this.#touch();
@@ -433,6 +458,20 @@ export class MockTransport implements Transport {
       s.incidents = [...s.incidents, incident];
       this.#log('server', 'problem', `${incident.title}. ${incident.body}`, id);
       this.#touch();
+      // The way out the real daemon offers: the first favourite that answers.
+      const alive = s.servers
+        .filter((x) => x.alive && x.id !== server.id)
+        .sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.order - b.order)[0];
+      const actions = alive ? [{ id: `switch:${alive.id}`, label: text.switchTo(alive.name) }] : [];
+      this.#toast({
+        id,
+        severity: 'problem',
+        title: incident.title,
+        body: incident.body,
+        actions: [...actions, { id: 'open', label: text.open }],
+        sticky: false,
+        close: false,
+      });
     });
   }
 
@@ -707,6 +746,7 @@ export class MockTransport implements Transport {
       case 'release':
         s.guard.blocking = false;
         s.guard.engaged = false;
+        this.#closeIncidents(['blocked', 'engine_failed'], 'close');
         this.#log('guard', 'problem', text.released);
         this.#touch();
         return;
@@ -738,9 +778,169 @@ export class MockTransport implements Transport {
     this.#state.conns = { total: this.#conns.length, vpn };
   }
 
-  #closeIncidents(kinds: Incident['kind'][]): void {
+  /**
+   * Ends incidents. "back" says it works again, with how long it did not;
+   * "close" takes the toast away without a word: the user turned the VPN
+   * off or on again, and the old problem means nothing now.
+   */
+  #closeIncidents(kinds: Incident['kind'][], how: 'back' | 'close' | 'quiet' = 'quiet'): void {
     const s = this.#state;
+    const ending = s.incidents.filter((incident) => kinds.includes(incident.kind));
     s.incidents = s.incidents.filter((incident) => !kinds.includes(incident.kind));
+    for (const incident of ending) {
+      if (how === 'close') {
+        this.#toast({ id: incident.id, severity: 'info', title: '', body: '', actions: [], sticky: false, close: true });
+      } else if (how === 'back') {
+        const name = s.servers.find((x) => x.id === incident.server)?.name ?? '';
+        const seconds = Math.max(1, Math.round((Date.now() - Date.parse(incident.opened)) / 1000));
+        this.#log('server', 'info', text.backBody(name, seconds), incident.id);
+        const body = text.backBody(name, seconds);
+        this.#toast({ id: incident.id, severity: 'info', title: text.backTitle, body, actions: [], sticky: false, close: false });
+      }
+    }
+  }
+
+  /** The connection check, a step every half second, as the daemon reports it. */
+  async #diagRun(): Promise<{ steps: DiagStep[] }> {
+    if (this.#diagBusy) throw new RpcError(ErrorCode.busy, text.diagBusy);
+    this.#diagBusy = true;
+    const s = this.#state;
+    const server = this.#selected();
+    const steps: DiagStep[] = [];
+    const say = (step: DiagStep) => {
+      if (this.#topics.has('diag')) this.#listeners.emit('diag', structuredClone(step));
+    };
+    const order: DiagStep['step'][] = ['network', 'internet', 'dns', 'engine', 'server', 'site'];
+    let stop: string | null = null;
+    let skipAdvice: string | null = null;
+    try {
+      for (const name of order) {
+        if (stop !== null) {
+          const step: DiagStep = { step: name, status: 'skip', text: stop, advice: skipAdvice };
+          skipAdvice = null;
+          steps.push(step);
+          say(step);
+          continue;
+        }
+        say({ step: name, status: 'running', text: text.diagRunning[name], advice: null });
+        await this.#wait(this.#still ? 0 : 450);
+        let step: DiagStep;
+        switch (name) {
+          case 'network':
+            step = s.health.network
+              ? { step: name, status: 'ok', text: text.diagOk.network, advice: null }
+              : { step: name, status: 'fail', text: text.diagFail.network, advice: text.diagAdvice.network };
+            if (step.status === 'fail') stop = text.diagSkipNoNetwork;
+            break;
+          case 'internet':
+            step = s.health.internet
+              ? { step: name, status: 'ok', text: text.diagOk.internet, advice: null }
+              : { step: name, status: 'fail', text: text.diagFail.internet, advice: text.diagAdvice.internet };
+            if (step.status === 'fail') stop = text.diagSkipNoInternet;
+            break;
+          case 'dns':
+            step = { step: name, status: 'ok', text: text.diagOk.dns, advice: null };
+            break;
+          case 'engine':
+            if (s.vpn.phase === 'off' || s.vpn.phase === 'stopping') {
+              step = { step: name, status: 'skip', text: text.diagVpnOff, advice: text.diagAdvice.vpnOff };
+              stop = text.diagSkipVpnOff;
+            } else if (s.vpn.phase !== 'on') {
+              step = { step: name, status: 'fail', text: text.diagFail.engine, advice: text.diagAdvice.engine };
+              stop = text.diagSkipVpnBroken;
+            } else {
+              step = { step: name, status: 'ok', text: text.diagOk.engine, advice: null };
+            }
+            break;
+          case 'server':
+            step = server?.alive
+              ? { step: name, status: 'ok', text: text.diagOkServer(server.name, server.ping ?? 0), advice: null }
+              : { step: name, status: 'fail', text: text.diagFailServer(server?.name ?? ''), advice: text.diagAdvice.server };
+            if (step.status === 'fail') stop = text.diagSkipServer;
+            break;
+          case 'site':
+            step = { step: name, status: 'ok', text: text.diagOkSite((server?.ping ?? 80) * 3), advice: null };
+            break;
+        }
+        steps.push(step);
+        say(step);
+      }
+      const broken = steps.find((x) => x.status === 'fail');
+      this.#log('system', 'info', broken ? text.diagJournalBroken(broken.text) : text.diagJournalOk);
+      return { steps };
+    } finally {
+      this.#diagBusy = false;
+    }
+  }
+
+  /** What the old Strelka in the mock brings: two subscriptions, its rules. */
+  async #legacyImport(dir: string): Promise<LegacyImportResult> {
+    const s = this.#state;
+    this.#jobBusy();
+    if (!dir || dir !== this.#legacyDir) throw new RpcError(ErrorCode.invalid, text.legacyNotHere);
+    s.busy = 'updating_subs';
+    this.#touch();
+    await this.#wait(SUBS_MS);
+    s.busy = null;
+    const subs = [
+      { id: `s${++this.#subSeq}`, name: 'klex', n: 8 },
+      { id: `s${++this.#subSeq}`, name: 'port', n: 5 },
+    ];
+    for (const sub of subs) {
+      const servers = freshServers(sub.id, sub.name, sub.n, Date.now(), this.#subSeq + sub.n);
+      s.servers = [...s.servers, ...servers];
+      s.subs = [
+        ...s.subs,
+        { id: sub.id, name: sub.name, url: 'https://panel.example.com/…a1b2', servers: servers.length, updatedAt: now(), error: null, expireAt: null, usedBytes: null, totalBytes: null },
+      ];
+    }
+    s.server = { selected: s.servers.find((x) => x.alive)?.id ?? null, ping: null, pingAt: null };
+    this.#legacyDir = null;
+    this.#log('system', 'info', text.legacyImported(subs.length));
+    this.#touch();
+    return { subs: subs.length, servers: s.servers.length, rules: 24, selected: s.server.selected, mode: 'rule', failed: [] };
+  }
+
+  /** Sends a toast, or keeps it for the first listener, as the daemon does. */
+  #toast(t: Toast): void {
+    if (this.#topics.has('toast')) {
+      this.#listeners.emit('toast', structuredClone(t));
+      return;
+    }
+    this.#held = this.#held.filter((x) => x.id !== t.id);
+    if (!t.close && !t.id.startsWith('e-')) this.#held.push(t);
+  }
+
+  /**
+   * The "toasts" scenario: one of every kind, a replacement by id, a
+   * critical one with two buttons and four in a row, so the stack folds.
+   */
+  #demoToasts(): void {
+    const s = this.#state;
+    const first = s.servers[0];
+    const name = (i: number) => s.servers[i]?.name ?? '';
+    const toSwitch = { id: `switch:${first?.id ?? ''}`, label: text.switchTo(name(0)) };
+    const open = { id: 'open', label: text.open };
+    const toast = (id: string, severity: Toast['severity'], title: string, body: string, actions: Toast['actions'] = []): Toast => ({
+      id,
+      severity,
+      title,
+      body,
+      actions,
+      sticky: severity === 'critical',
+      close: false,
+    });
+    const plan: [number, Toast][] = [
+      [1500, toast('e-connected', 'info', text.connectedTitle, text.connected(name(0), first?.ping ?? null))],
+      [3000, toast('i-demo-1', 'problem', text.serverDownTitle(name(1)), text.serverDownBody, [toSwitch, open])],
+      [6000, toast('i-demo-1', 'problem', text.serverDownTitle(name(1)), `${text.hintPort} ${text.serverDownBody}`, [toSwitch, open])],
+      [8000, toast('i-demo-2', 'critical', text.blockedTitle, text.blockedBody, [{ id: 'retry', label: text.retry }, { id: 'release', label: text.release }])],
+      [10000, toast('i-demo-3', 'problem', text.subExpiringTitle(s.subs[0]?.name ?? ''), text.subExpiringBody, [{ id: 'update_subs', label: text.updateSubs }])],
+      [10300, toast('i-demo-4', 'problem', text.helperTitle, text.helperBody, [open])],
+      [10600, toast('e-subs', 'info', text.subsAutoTitle, text.subsAutoBody)],
+      [10900, toast('i-demo-1', 'info', text.backTitle, text.backBody(name(1), 8))],
+    ];
+    for (const [ms, t] of plan) setTimeout(() => this.#toast(t), ms);
   }
 
   #touch(): void {

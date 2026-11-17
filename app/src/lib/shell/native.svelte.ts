@@ -4,17 +4,42 @@
 // ready texts.
 
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { ru } from '../i18n/ru';
 import { daemon } from '../store.svelte';
+import { theme } from '../theme.svelte';
+import { toasts } from '../toasts.svelte';
 import { describe, displayName, selectedServer, type TrayIcon } from '../view';
+import { TOASTS_EVENTS, type ActionPayload, type ShowPayload } from './toastwire';
 import { win } from './window.svelte';
+
+interface TrayServer {
+  id: string;
+  label: string;
+  checked: boolean;
+}
 
 interface TrayView {
   icon: TrayIcon;
   tooltip: string;
   toggleLabel: string;
   canToggle: boolean;
+  /** The favourites, in the user's order: the "Сервер" submenu. */
+  servers: TrayServer[];
+}
+
+function trayServers(): TrayServer[] {
+  const s = daemon.state;
+  if (!s) return [];
+  return s.servers
+    .filter((x) => x.favorite)
+    .sort((a, b) => a.order - b.order)
+    .map((x) => ({
+      id: x.id,
+      // Menus draw no flags: the name alone, and the last ping if known.
+      label: x.ping !== null && x.alive ? `${displayName(x)} · ${ru.units.ms(x.ping)}` : displayName(x),
+      checked: x.id === s.server.selected,
+    }));
 }
 
 const PULSE_MS = 700;
@@ -23,7 +48,7 @@ const AUTOSTART_KEY = 'strelka.autostart.offered';
 function trayView(): TrayView {
   const s = daemon.state;
   if (daemon.link !== 'connected' || !s || daemon.outdated) {
-    return { icon: 'problem', tooltip: ru.tray.noDaemon, toggleLabel: ru.tray.turnOn, canToggle: false };
+    return { icon: 'problem', tooltip: ru.tray.noDaemon, toggleLabel: ru.tray.turnOn, canToggle: false, servers: [] };
   }
   // The clock is not read here on purpose: the tooltip carries no durations,
   // and the tray must not be redrawn every second.
@@ -40,6 +65,7 @@ function trayView(): TrayView {
     tooltip: ru.tray.tooltip(picture.word, detail),
     toggleLabel: picture.wantOn ? ru.tray.turnOff : ru.tray.turnOn,
     canToggle: true,
+    servers: trayServers(),
   };
 }
 
@@ -47,8 +73,15 @@ function push(view: TrayView, frame: string): void {
   void invoke('tray_set', {
     icon: frame,
     tooltip: view.tooltip,
-    labels: { open: ru.tray.open, toggle: view.toggleLabel, quit: ru.tray.quit },
+    labels: {
+      open: ru.tray.open,
+      toggle: view.toggleLabel,
+      server: ru.tray.server,
+      noFavorites: ru.tray.noFavorites,
+      quit: ru.tray.quit,
+    },
     canToggle: view.canToggle,
+    servers: view.servers,
   });
 }
 
@@ -100,11 +133,73 @@ async function watchWindow(): Promise<void> {
   win.shown = await getCurrentWindow().isVisible();
 }
 
+/**
+ * Toasts in the app: their own window, or the system's notifications when
+ * the user asked for those or the window could not be made. Which one is
+ * the shell's question; what to show is decided in toasts.svelte.ts.
+ */
+async function startToasts(): Promise<void> {
+  toasts.showMain = () => void invoke('main_show');
+  toasts.screenBusy = () => invoke<boolean>('screen_busy');
+  toasts.ownWindow = await invoke<boolean>('toasts_native').catch(() => false);
+
+  const send = () => {
+    const payload: ShowPayload = {
+      view: toasts.mode === 'window' ? toasts.view : { cards: [], more: 0 },
+      theme: theme.resolved,
+    };
+    void emit(TOASTS_EVENTS.show, payload);
+  };
+  await listen(TOASTS_EVENTS.ready, send);
+  await listen<ActionPayload>(TOASTS_EVENTS.action, ({ payload }) => {
+    if (payload.action === 'more') toasts.more();
+    else void toasts.act(payload.id, payload.action);
+  });
+  await listen<boolean>(TOASTS_EVENTS.hover, ({ payload }) => toasts.hover(payload));
+
+  // What the system was already told, by card: a replacement is a new
+  // notification there, since it cannot change one in place.
+  const told = new Map<string, number>();
+  $effect.root(() => {
+    $effect(() => {
+      toasts.mode = toasts.ownWindow && !toasts.systemPref ? 'window' : 'system';
+    });
+    $effect(() => {
+      void toasts.view;
+      void theme.resolved;
+      send();
+    });
+    $effect(() => {
+      const cards = toasts.mode === 'system' ? toasts.toasts.shown : [];
+      for (const id of [...told.keys()]) if (!cards.some((c) => c.id === id)) told.delete(id);
+      for (const c of cards) {
+        if (told.get(c.id) === c.rev) continue;
+        told.set(c.id, c.rev);
+        void notifySystem(c.title, c.body);
+      }
+    });
+  });
+}
+
+async function notifySystem(title: string, body: string): Promise<void> {
+  try {
+    const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
+    if (!(await isPermissionGranted()) && (await requestPermission()) !== 'granted') return;
+    sendNotification({ title, body });
+  } catch {
+    // Nowhere left to say it: the journal and the tray icon have it.
+  }
+}
+
 export function start(): void {
   $effect.root(watchTray);
   void watchWindow();
   void listen('tray://toggle', () => {
     if (daemon.ready) void daemon.toggleVpn();
   });
+  void listen<string>('tray://server', ({ payload }) => {
+    if (daemon.ready) void daemon.selectServer(payload);
+  });
+  void startToasts();
   void offerAutostart();
 }

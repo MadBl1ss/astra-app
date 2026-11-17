@@ -26,10 +26,23 @@
 
   // "Server not answering" is a warning; "nothing works" is an error.
   const vpnTone = $derived(tone === 'bad' ? 'bad' : 'warn');
+
+  // A narrow column breaks the figures between their parts, never inside
+  // one: "↓ 3,9 МБ/с" split at the slash reads as two numbers.
+  const SEP = ' · ';
+  const parts = (stat: string) => stat.split(SEP);
 </script>
 
+{#snippet figures(stat: string)}
+  <!-- A sentence ("Программы из списка VPN ждут сервер") wraps as usual. -->
+  <span class="stat">
+    {#each parts(stat) as part, i (i)}{#if i > 0}<span class="sep">{SEP}</span>{/if}<span class:part={parts(stat).length > 1}>{part}</span>{/each}
+  </span>
+{/snippet}
+
 <div class="fork">
-  <svg viewBox="0 0 40 112" aria-hidden="true">
+  <!-- Stretched with its rows: the ends of the paths stay at their middles. -->
+  <svg viewBox="0 0 40 112" preserveAspectRatio="none" aria-hidden="true">
     <path class="rail trunk" class:closed={gate} d="M3 56H13" />
     <path class="rail vpn {vpn} {vpnTone}" class:degraded={vpn === 'flow' && tone === 'warn'} d="M13 56C27 56 21 28 37 28" />
     <path class="rail direct {direct}" d="M13 56C27 56 21 84 37 84" />
@@ -42,11 +55,11 @@
 
   <div class="row">
     <b>{t.vpn}</b>
-    <span>{vpnStat}</span>
+    {@render figures(vpnStat)}
   </div>
   <div class="row">
     <b>{t.direct}</b>
-    <span>{directStat}</span>
+    {@render figures(directStat)}
   </div>
 </div>
 
@@ -54,14 +67,21 @@
   .fork {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr);
-    grid-template-rows: 56px 56px;
+    /* Equal rows, 56 px or as tall as the taller one needs: in a narrow
+       window the figures take three lines. */
+    grid-template-rows: repeat(2, minmax(56px, 1fr));
     column-gap: var(--s2);
   }
 
   svg {
     grid-row: 1 / 3;
     width: 40px;
-    height: 112px;
+    height: 100%;
+    min-height: 112px;
+  }
+
+  svg path {
+    vector-effect: non-scaling-stroke;
   }
 
   .row {
@@ -76,11 +96,15 @@
     font-weight: 600;
   }
 
-  span {
+  .stat {
     color: var(--muted);
     font-size: var(--fs-cap);
     /* Figures that do not fit one line break into even halves. */
     text-wrap: balance;
+  }
+
+  .part {
+    white-space: nowrap;
   }
 
   .rail {

@@ -13,8 +13,10 @@
   import { fileName, report } from '../report.svelte';
   import { daemon } from '../store.svelte';
   import { theme, type ThemeChoice } from '../theme.svelte';
+  import { toasts } from '../toasts.svelte';
   import { inWindow } from '../transport';
   import { flagOfCode, guardLook } from '../view';
+  import DiagDialog from './DiagDialog.svelte';
 
   let { state: s }: { state: State } = $props();
 
@@ -174,6 +176,14 @@
     }
   }
 
+  // ---- toasts: Strelka's own or the system's ----
+
+  const systemNote = $derived(
+    toasts.ownWindow === null ? t.systemToastsBrowser : toasts.ownWindow ? t.systemToastsNote : t.systemToastsForced,
+  );
+
+  let checking = $state(false);
+
   const guard = $derived(guardLook(s));
   const restartable = $derived(s.vpn.phase === 'on' || s.vpn.phase === 'recovering' || s.vpn.phase === 'failed');
 </script>
@@ -224,6 +234,17 @@
             label={t.quietFullscreen}
             checked={shown.quietFullscreen}
             onchange={(on) => set('quietFullscreen', on)}
+          />
+        {/snippet}
+      </SettingRow>
+      <SettingRow label={t.systemToasts} note={systemNote}>
+        {#snippet children()}
+          <Switch
+            size="sm"
+            label={t.systemToasts}
+            checked={toasts.ownWindow === false || toasts.systemPref}
+            disabled={!toasts.ownWindow}
+            onchange={(on) => toasts.setSystemPref(on)}
           />
         {/snippet}
       </SettingRow>
@@ -348,6 +369,11 @@
           {/each}
         </dl>
       </div>
+      <SettingRow label={t.check} note={t.checkNote}>
+        {#snippet children()}
+          <Button icon="pulse" onclick={() => (checking = true)}>{t.checkButton}</Button>
+        {/snippet}
+      </SettingRow>
       <SettingRow label={t.restart} note={restartable ? t.restartNote : t.restartOff}>
         {#snippet children()}
           <Button icon="refresh" disabled={!restartable} onclick={() => daemon.rpc('vpn.restart')}>{t.restartButton}</Button>
@@ -367,6 +393,10 @@
     </div>
   </section>
 </div>
+
+{#if checking}
+  <DiagDialog onclose={() => (checking = false)} />
+{/if}
 
 <style>
   .settings {

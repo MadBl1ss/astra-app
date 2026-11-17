@@ -13,12 +13,19 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
+# The fallback for toasts: the system's own notifications.
+tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 # The bridge to the daemon: a named pipe on Windows, a unix socket on Linux.
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "macros"] }
+
+# The toast window is shown without taking the focus, which Tauri cannot do
+# by itself; the same version as Tauri's own, so it is built once.
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 
 [profile.release]
 codegen-units = 1

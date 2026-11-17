@@ -20,6 +20,8 @@ function load(): ThemeChoice {
  */
 class Theme {
   choice = $state<ThemeChoice>(load());
+  /** What is on screen now; the toast window is told this one. */
+  resolved = $state<'dark' | 'light'>('dark');
   #system = matchMedia('(prefers-color-scheme: light)');
   #forced: 'dark' | 'light' | null;
 
@@ -45,6 +47,7 @@ class Theme {
   #apply(): void {
     const resolved =
       this.#forced ?? (this.choice === 'system' ? (this.#system.matches ? 'light' : 'dark') : this.choice);
+    this.resolved = resolved;
     document.documentElement.dataset.theme = resolved;
   }
 }

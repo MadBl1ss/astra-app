@@ -5,9 +5,11 @@
 //! page from the daemon's state and passed here with `tray_set`; this module
 //! only knows how to put them on screen.
 
+use std::sync::Mutex;
+
 use serde::Deserialize;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, Wry};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -19,6 +21,12 @@ const WINDOW: &str = "main";
 /// knows what the VPN is doing and calls the daemon itself.
 const EVENT_TOGGLE: &str = "tray://toggle";
 
+/// Tells the page that a server was chosen in the "Сервер" submenu; the
+/// payload is its id.
+const EVENT_SERVER: &str = "tray://server";
+/// Menu ids of servers carry this prefix before the server's id.
+const SERVER_PREFIX: &str = "server:";
+
 /// Tells the page whether the window is on screen. A hidden WebView still
 /// reports itself as visible, and the page should not keep asking the daemon
 /// for live figures nobody sees.
@@ -28,6 +36,7 @@ const EVENT_SHOWN: &str = "window://shown";
 // The dictionary (app/src/lib/i18n/ru.ts) replaces all of them on tray_set.
 const LABEL_OPEN: &str = "Открыть";
 const LABEL_TOGGLE: &str = "Включить VPN";
+const LABEL_SERVER: &str = "Сервер";
 const LABEL_QUIT: &str = "Выход";
 const TOOLTIP: &str = "Стрелка";
 
@@ -51,15 +60,19 @@ fn icon(name: &str) -> Option<Image<'static>> {
 pub struct Items {
     open: MenuItem<Wry>,
     toggle: MenuItem<Wry>,
+    server: Submenu<Wry>,
     quit: MenuItem<Wry>,
+    /// What the server submenu shows now, so it is rebuilt only on change.
+    servers: Mutex<Vec<ServerItem>>,
 }
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", LABEL_OPEN, true, None::<&str>)?;
     // Disabled until the page says the daemon is there to be told.
     let toggle = MenuItem::with_id(app, "toggle", LABEL_TOGGLE, false, None::<&str>)?;
+    let server = Submenu::with_id(app, "server", LABEL_SERVER, false)?;
     let quit = MenuItem::with_id(app, "quit", LABEL_QUIT, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &toggle, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &toggle, &server, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(TOOLTIP)
@@ -73,7 +86,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
             // The only way to quit: closing the window merely hides it.
             "quit" => app.exit(0),
-            _ => {}
+            id => {
+                if let Some(server) = id.strip_prefix(SERVER_PREFIX) {
+                    let _ = app.emit(EVENT_SERVER, server.to_string());
+                }
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -90,8 +107,15 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     }
     tray.build(app)?;
 
-    app.manage(Items { open, toggle, quit });
+    app.manage(Items { open, toggle, server, quit, servers: Mutex::new(Vec::new()) });
     Ok(())
+}
+
+/// Lets the page bring the main window up: a toast's "Открыть" is pressed
+/// in another window, which cannot show this one by itself.
+#[tauri::command]
+pub fn main_show(app: AppHandle) {
+    show_window(&app);
 }
 
 pub fn show_window(app: &AppHandle) {
@@ -133,10 +157,21 @@ fn toggle_window(app: &AppHandle) {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Labels {
     open: String,
     toggle: String,
+    server: String,
+    no_favorites: String,
     quit: String,
+}
+
+/// One line of the "Сервер" submenu: a favourite, ticked when selected.
+#[derive(Deserialize, Clone, PartialEq)]
+pub struct ServerItem {
+    id: String,
+    label: String,
+    checked: bool,
 }
 
 /// Called by the page whenever what the tray shows has changed.
@@ -148,6 +183,7 @@ pub fn tray_set(
     tooltip: String,
     labels: Labels,
     can_toggle: bool,
+    servers: Vec<ServerItem>,
 ) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Some(image) = self::icon(&icon) {
@@ -158,5 +194,37 @@ pub fn tray_set(
     let _ = items.open.set_text(labels.open);
     let _ = items.toggle.set_text(labels.toggle);
     let _ = items.toggle.set_enabled(can_toggle);
+    let _ = items.server.set_text(labels.server);
+    let _ = items.server.set_enabled(can_toggle);
     let _ = items.quit.set_text(labels.quit);
+    set_servers(&app, &items, servers, &labels.no_favorites);
+}
+
+/// Rebuilds the submenu when its lines changed. Menus have no "replace all",
+/// so the old lines go and the new ones come.
+fn set_servers(app: &AppHandle, items: &Items, servers: Vec<ServerItem>, empty: &str) {
+    let Ok(mut shown) = items.servers.lock() else {
+        return;
+    };
+    let fresh = items.server.items().map(|list| list.is_empty()).unwrap_or(true);
+    if *shown == servers && !fresh {
+        return;
+    }
+    if let Ok(old) = items.server.items() {
+        for item in old {
+            let _ = items.server.remove(&item);
+        }
+    }
+    if servers.is_empty() {
+        if let Ok(line) = MenuItem::with_id(app, "server-none", empty, false, None::<&str>) {
+            let _ = items.server.append(&line);
+        }
+    }
+    for s in &servers {
+        let id = format!("{SERVER_PREFIX}{}", s.id);
+        if let Ok(line) = CheckMenuItem::with_id(app, id, &s.label, true, s.checked, None::<&str>) {
+            let _ = items.server.append(&line);
+        }
+    }
+    *shown = servers;
 }
