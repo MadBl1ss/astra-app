@@ -174,6 +174,11 @@ export function banner(s: State): BannerView | null {
     case 'helper_down':
       actions.push({ label: t.banner.retry, action: 'retry' });
       break;
+    case 'blocked':
+      // The kill switch has kept the internet closed while the engine is
+      // still trying: the same two ways out as when it has given up.
+      actions.push({ label: t.banner.retry, action: 'retry' }, { label: t.banner.release, action: 'release' });
+      break;
     case 'sub_expiring':
     case 'sub_expired':
     case 'sub_traffic':
@@ -181,9 +186,15 @@ export function banner(s: State): BannerView | null {
       break;
   }
 
-  const body = [incident.body, incident.unstable ? t.banner.unstable : '', s.health.hint ?? '']
-    .filter((part, i, all) => part && all.indexOf(part) === i)
-    .join(' ');
+  // While the kill switch holds the internet closed, the heading above the
+  // banner already says why the VPN is down; the banner keeps to what the
+  // heading does not say - that this is deliberate - and the two ways out.
+  const said = s.guard.blocking && (incident.kind === 'engine_failed' || incident.kind === 'blocked');
+  const body = said
+    ? ''
+    : [incident.body, incident.unstable ? t.banner.unstable : '', s.health.hint ?? '']
+        .filter((part, i, all) => part && all.indexOf(part) === i)
+        .join(' ');
   return {
     id: incident.id,
     tone: incident.severity === 'critical' ? 'bad' : 'warn',

@@ -17,6 +17,7 @@ import (
 	"strelka/internal/clash"
 	"strelka/internal/confgen"
 	"strelka/internal/engine"
+	"strelka/internal/guard"
 	"strelka/internal/health"
 	"strelka/internal/incident"
 	"strelka/internal/ipc"
@@ -74,6 +75,15 @@ type Options struct {
 	// WatchNetwork replaces the route monitor: it is given the function to
 	// report "is there a default route" with and returns how to stop.
 	WatchNetwork func(report func(up bool)) (stop func())
+
+	// Guard is the kill switch. Nil means none - and it is nil unless the
+	// caller says otherwise, so that nothing but cmd/strelkad ever reaches
+	// for the system's firewall: a test run from an administrator's console
+	// must not be able to cut the machine off.
+	Guard guard.Guard
+	// FindTunnel looks the tunnel adapter up for the guard's permit; nil
+	// asks the system for the adapter named confgen.TUNName.
+	FindTunnel func() (luid uint64, ok bool)
 
 	// Logf receives the daemon's own diagnostics (English, for the console).
 	Logf func(format string, a ...any)
@@ -165,6 +175,8 @@ type Daemon struct {
 	statsSaved  time.Time
 	hints       hintGate               // shared with the supervisors' goroutines
 	held        map[string]proto.Toast // toasts waiting for somebody to show them
+
+	gs guardState // the kill switch, see guard.go
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.
@@ -303,6 +315,8 @@ func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 	d.srv.Close()
 	d.sup.Close()
 	d.xsup.Close()
+	// Last, as on every stop: the engine first, the guard after it.
+	d.releaseGuard()
 	if d.statsDirty {
 		d.saveStats(time.Now())
 	}
@@ -355,6 +369,7 @@ func (d *Daemon) loop(ctx context.Context) {
 			case loopFunc:
 				m()
 			}
+			d.syncGuard(time.Now(), false)
 			if stopping == nil && d.st.VPN.Phase == proto.PhaseOff {
 				d.shutdown()
 				return
@@ -441,6 +456,8 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		return d.engineVersions(c)
 	case proto.MethodDiagExport:
 		return d.diagExport(c)
+	case proto.MethodGuardStatus:
+		result = d.guardStatus()
 	default:
 		return d.dispatchProfile(c)
 	}
@@ -535,6 +552,9 @@ func (d *Daemon) beginStart() {
 // Ready event, which a plain Start would not give.
 func (d *Daemon) restartEngines() {
 	d.markStarting()
+	// The guard goes up before the engine does: what the engine's start
+	// leaves uncovered for a second is the leak this is all about.
+	d.syncGuard(time.Now(), true)
 	d.sup.Restart()
 	if d.xrayWanted {
 		d.xsup.Restart()
@@ -597,6 +617,7 @@ func (d *Daemon) onEngine(m engEvent) {
 	switch ev.Kind {
 	case engine.Started:
 		d.opts.Logf("%s started, pid %d", boxName, ev.PID)
+		d.engineUp()
 
 	case engine.Ready:
 		d.opts.Logf("%s is ready, pid %d", boxName, ev.PID)
@@ -611,6 +632,7 @@ func (d *Daemon) onEngine(m engEvent) {
 		}
 		d.boxReady = false
 		d.live.Store(false)
+		d.engineDown()
 		if d.st.VPN.Phase == proto.PhaseStopping {
 			return
 		}
@@ -638,6 +660,7 @@ func (d *Daemon) onEngine(m engEvent) {
 			d.opts.Logf("%s stopped %s, pid %d", boxName, how, ev.PID)
 		}
 		d.boxReady = false
+		d.engineDown()
 		// In "failed" the engine was stopped because the helper gave up;
 		// the failure, not this stop, is what the user must see.
 		if d.st.VPN.Phase == proto.PhaseOff || d.st.VPN.Phase == proto.PhaseFailed {
@@ -652,6 +675,7 @@ func (d *Daemon) onEngine(m engEvent) {
 	case engine.Failed:
 		d.opts.Logf("%s failed: %s: %v", boxName, ev.Reason, ev.Err)
 		d.boxReady = false
+		d.engineDown()
 		d.xsup.Stop()
 		if d.st.VPN.Phase == proto.PhaseStopping {
 			// Giving up is as good as stopped for someone who asked to stop.

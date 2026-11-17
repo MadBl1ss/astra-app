@@ -19,7 +19,20 @@ const (
 	labelUpdateSubs = "Обновить подписки"
 	labelRetry      = "Попробовать снова"
 	labelRestart    = "Перезапустить VPN"
+	labelRelease    = "Разрешить интернет без VPN"
 )
+
+// titleBlocked says what the kill switch is doing and why, in one line: the
+// user's first thought otherwise is that the internet is broken.
+const titleBlocked = "Интернет закрыт, чтобы трафик не пошёл мимо VPN"
+
+func lowerFirst(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return s
+	}
+	return strings.ToLower(string(r[:1])) + string(r[1:])
+}
 
 func labelSwitch(name string) string { return "Переключить на " + name }
 
@@ -57,6 +70,17 @@ func join(parts ...string) string {
 // describe gives an incident its title and body for what is known now.
 func describe(kind string, in Input, unstable bool) (title, body string) {
 	server := in.Server.title()
+	// A closed internet outranks every other way of putting it, "unstable"
+	// included: it is what the user is looking at.
+	switch {
+	case kind == proto.IncidentBlocked:
+		return titleBlocked, "VPN перезапускается дольше обычного. Интернет откроется сам, как только VPN заработает."
+	case kind == proto.VerdictEngineFailed && in.Blocking:
+		if in.FailText == "" {
+			return titleBlocked, "VPN не запускается. Подробности — в журнале."
+		}
+		return titleBlocked, "VPN не запускается: " + lowerFirst(in.FailText)
+	}
 	if unstable {
 		title = "Соединение нестабильно"
 		switch kind {
@@ -112,7 +136,12 @@ func actions(kind string, in Input) []proto.ToastAction {
 		}
 	case proto.VerdictAllServersDown:
 		return []proto.ToastAction{{ID: proto.ActionUpdateSubs, Label: labelUpdateSubs}, open}
+	case proto.IncidentBlocked:
+		return []proto.ToastAction{{ID: proto.ActionRetry, Label: labelRetry}, {ID: proto.ActionRelease, Label: labelRelease}}
 	case proto.VerdictEngineFailed:
+		if in.Blocking {
+			return []proto.ToastAction{{ID: proto.ActionRetry, Label: labelRetry}, {ID: proto.ActionRelease, Label: labelRelease}}
+		}
 		return []proto.ToastAction{{ID: proto.ActionRetry, Label: labelRetry}, open}
 	case proto.VerdictHelperDown:
 		return []proto.ToastAction{{ID: proto.ActionRetry, Label: labelRestart}, open}
@@ -159,6 +188,8 @@ func endText(kind string, server, now Named, unstable bool, lasted time.Duration
 		return fmt.Sprintf("VPN запустился. Не работал %s.", d)
 	case proto.VerdictHelperDown:
 		return fmt.Sprintf("Помощник Xray снова работает. Не работал %s.", d)
+	case proto.IncidentBlocked:
+		return fmt.Sprintf("VPN снова работает, интернет открыт. Был закрыт %s.", d)
 	}
 	return fmt.Sprintf("Снова работает. Не работало %s.", d)
 }

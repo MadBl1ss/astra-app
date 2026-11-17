@@ -1,6 +1,7 @@
 // strelkad is the Strelka daemon. At this stage it runs in a console only:
 //
-//	strelkad run --data DIR --engines DIR [--no-tun] [--pipe NAME]
+//	strelkad run --data DIR --engines DIR [--no-tun] [--no-guard] [--pipe NAME]
+//	strelkad guard test [--hold 20s] | guard reset
 //
 // Running under the Windows service manager and systemd arrives with the
 // installer.
@@ -18,6 +19,7 @@ import (
 
 	"strelka/internal/confgen"
 	"strelka/internal/daemon"
+	"strelka/internal/guard"
 	"strelka/internal/ipc"
 	"strelka/internal/store"
 )
@@ -32,6 +34,8 @@ func realMain(args []string) int {
 	switch args[0] {
 	case "run":
 		return run(args[1:])
+	case "guard":
+		return guardCmd(args[1:])
 	case "version", "--version":
 		fmt.Println(daemon.Version)
 		return 0
@@ -47,14 +51,22 @@ func realMain(args []string) int {
 func usage() {
 	fmt.Fprint(os.Stderr, `Служба Стрелки.
 
-  strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--pipe ИМЯ]
+  strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--no-guard] [--pipe ИМЯ]
+  strelkad guard test [--hold 20s] [--engines ПАПКА] [--no-lan] [--out ФАЙЛ]
+  strelkad guard reset
   strelkad version
 
   --data     папка данных службы (в разработке — .dev)
   --engines  папка с sing-box и xray
   --no-tun   без сетевого адаптера: вместо него локальный прокси на 127.0.0.1:20808.
              Не требует прав администратора и не мешает VPN, который уже работает
+  --no-guard без замка: фильтры сетевого экрана не ставятся, что бы ни стояло в настройках
   --pipe     имя канала; по умолчанию strelka-dev, чтобы не мешать установленной службе
+
+  guard test   поставить фильтры замка на время и снять: проверка самих фильтров.
+               ВНИМАНИЕ: на это время интернет закрыт у всего, кроме локальной сети, —
+               и у другого VPN тоже. Нужны права администратора
+  guard reset  убрать все фильтры Стрелки, даже если служба не запущена
 `)
 }
 
@@ -64,6 +76,7 @@ func run(args []string) int {
 	data := fs.String("data", "", "")
 	engines := fs.String("engines", "", "")
 	noTUN := fs.Bool("no-tun", false, "")
+	noGuard := fs.Bool("no-guard", false, "")
 	pipe := fs.String("pipe", ipc.DevName, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -87,7 +100,13 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "Канал %s не открылся: %v\nПохоже, служба уже запущена.\n", ipc.Address(*pipe), err)
 		return 1
 	}
-	d, err := daemon.New(daemon.Options{Paths: paths, NoTUN: *noTUN, Logf: logf})
+	opts := daemon.Options{Paths: paths, NoTUN: *noTUN, Logf: logf}
+	if !*noTUN && !*noGuard {
+		// Without the TUN there is nothing for the other programs to go
+		// through: a guard would simply cut the machine off.
+		opts.Guard = guard.New(logf)
+	}
+	d, err := daemon.New(opts)
 	if err != nil {
 		l.Close()
 		fmt.Fprintf(os.Stderr, "Служба не запустилась: %v\n", err)
