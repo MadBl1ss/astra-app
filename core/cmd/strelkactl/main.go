@@ -72,15 +72,24 @@ func usage() {
   place set ШИРОТА ДОЛГОТА ГОРОД [СТРАНА]
                          выбрать вручную; СТРАНА — код из двух букв
 
-  --pipe     имя канала; по умолчанию $STRELKA_PIPE или strelka-dev
+  --pipe     имя канала; по умолчанию $STRELKA_PIPE, иначе strelka у установленной
+             копии и strelka-dev у собранной для разработки
   --no-wait  для start, stop, restart: не ждать, пока фаза сменится
 `)
 }
+
+// installedPipe is the channel of the installed service. The installer's
+// build stamps "strelka" into the copy it ships (-ldflags -X); a developer's
+// build stays on strelka-dev and never reaches the installed service.
+var installedPipe string
 
 func realMain(args []string) int {
 	fs := flag.NewFlagSet("strelkactl", flag.ContinueOnError)
 	fs.Usage = usage
 	defPipe := os.Getenv("STRELKA_PIPE")
+	if defPipe == "" {
+		defPipe = installedPipe
+	}
 	if defPipe == "" {
 		defPipe = ipc.DevName
 	}

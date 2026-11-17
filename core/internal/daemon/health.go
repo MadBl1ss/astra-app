@@ -286,6 +286,19 @@ func (d *Daemon) tick() {
 	}
 }
 
+// Woke tells the daemon the machine has just come out of sleep. The service
+// manager says so before the first tick after the lid opens; the clock gap
+// in tick() would notice it a second or so later anyway, so this is the same
+// signal arriving earlier, not a second mechanism. Taking the tick's clock
+// along keeps the gap from reporting the same wake-up twice.
+func (d *Daemon) Woke() {
+	d.post(func() {
+		d.lastTick = time.Now().Round(0)
+		d.opts.Logf("health: the system says it has woken up")
+		d.feed(health.Wake{})
+	})
+}
+
 func (d *Daemon) saveStats(now time.Time) {
 	d.statsDirty, d.statsSaved = false, now
 	if err := d.stats.Save(d.opts.Paths.StatsFile(), now); err != nil {

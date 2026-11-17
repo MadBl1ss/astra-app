@@ -30,8 +30,10 @@ import (
 	"strelka/proto"
 )
 
-// Version of the daemon, reported in hello and in State.
-const Version = "0.1.0"
+// Version of the daemon, reported in hello and in State. A variable so that
+// scripts/build-installer.ps1 can stamp the app's version into it
+// (-ldflags -X); the window and the service of one install share a number.
+var Version = "0.1.0"
 
 // minStateInterval caps the broadcast at ten documents a second; changes
 // that come faster are merged into the next one.

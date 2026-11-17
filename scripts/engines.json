@@ -1,0 +1,34 @@
+{
+  "_comment": "Pinned engine releases: the newest stable of each. archive.sha256 is the digest GitHub publishes for the release asset; files[].sha256 are the binaries inside it, so a copy from elsewhere (-From) can be checked too. Changing a version means a new TUN check (scripts/tun-check.ps1).",
+  "windows-amd64": [
+    {
+      "name": "sing-box",
+      "version": "1.14.4",
+      "license": "GPL-3.0-or-later",
+      "source": "https://github.com/SagerNet/sing-box/tree/v1.14.4",
+      "archive": {
+        "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip",
+        "sha256": "99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df"
+      },
+      "files": [
+        { "from": "sing-box-1.14.4-windows-amd64/sing-box.exe", "to": "sing-box.exe", "sha256": "8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9" },
+        { "from": "sing-box-1.14.4-windows-amd64/libcronet.dll", "to": "libcronet.dll", "sha256": "3217c6260fbca5f16072e0b79735742f40109a63bb0ff88fd6b96dd6b54a2928" },
+        { "from": "sing-box-1.14.4-windows-amd64/LICENSE", "to": "licenses/sing-box-LICENSE.txt" }
+      ]
+    },
+    {
+      "name": "xray",
+      "version": "26.11.9",
+      "license": "MPL-2.0",
+      "source": "https://github.com/XTLS/Xray-core/tree/v26.11.9",
+      "archive": {
+        "url": "https://github.com/XTLS/Xray-core/releases/download/v26.11.9/Xray-windows-64.zip",
+        "sha256": "1262522266337b824f07beb8e1375786b437683b3890105469088f8e17e0a69d"
+      },
+      "files": [
+        { "from": "xray.exe", "to": "xray.exe", "sha256": "1ca7a2cf61ba2c5d20b21a80d405b57933939751081cb289f07bd8ddf7cc3185" },
+        { "from": "LICENSE", "to": "licenses/xray-LICENSE.txt" }
+      ]
+    }
+  ]
+}

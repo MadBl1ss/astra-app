@@ -268,6 +268,20 @@ func TestRestartAndSwitchingOffAreNotIncidents(t *testing.T) {
 	}
 }
 
+// The service manager's "resumed" is the same wake-up as a gap in the
+// clock: the diagnosis settles for a moment and comes back without an
+// incident.
+func TestWakeFromTheServiceManagerSettlesWithoutAnIncident(t *testing.T) {
+	r := startHealthy(t)
+	r.d.Woke()
+	r.waitVerdict(proto.VerdictSettling)
+	r.waitVerdict(proto.VerdictOK)
+	r.settle(200 * time.Millisecond)
+	if len(r.toasts) != 0 || len(r.problems()) != 0 || len(r.last.Incidents) != 0 {
+		t.Errorf("после пробуждения: уведомления %q, записи %+v", r.toastTitles(), r.problems())
+	}
+}
+
 func TestTrafficOutweighsFailingProbes(t *testing.T) {
 	// The poller reports traffic every two seconds whatever the tuning, so
 	// here its word has to stay good for longer than the quick 300 ms.
