@@ -232,6 +232,24 @@ fn server_is_a_service(client: &tokio::net::windows::named_pipe::NamedPipeClient
     Ok(())
 }
 
+#[cfg(all(test, windows))]
+mod tests {
+    use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+
+    /// A server in the test's own session - which is where an impostor
+    /// would sit - is refused. The service's side (session 0) can only be
+    /// seen with the installed service.
+    #[tokio::test]
+    async fn a_server_in_a_user_session_is_not_the_service() {
+        let name = format!(r"\\.\pipe\strelka-test-{}", std::process::id());
+        let server = ServerOptions::new().first_pipe_instance(true).create(&name).unwrap();
+        let client = ClientOptions::new().open(&name).unwrap();
+        let err = super::server_is_a_service(&client).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        drop(server);
+    }
+}
+
 #[cfg(unix)]
 fn default_channel() -> &'static str {
     "/run/strelka/strelkad.sock"

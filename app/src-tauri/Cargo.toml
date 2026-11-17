@@ -22,6 +22,9 @@ serde = { version = "1", features = ["derive"] }
 # The bridge to the daemon: a named pipe on Windows, a unix socket on Linux.
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "macros"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros", "net"] }
+
 # The toast window is shown without taking the focus, which Tauri cannot do
 # by itself; the same version as Tauri's own, so it is built once.
 [target."cfg(windows)".dependencies]

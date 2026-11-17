@@ -93,7 +93,7 @@ func (s *service) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 
 	d, l, err := open(s.cfg, s.log.Printf)
 	if errors.Is(err, errChannelTaken) {
-		s.log.Printf("%v. Another daemon is running, or a program holds the name to pose as the service", err)
+		s.log.Printf("%v (another daemon is running, or a program holds the name to pose as the service)", err)
 		return true, 2
 	}
 	if err != nil {

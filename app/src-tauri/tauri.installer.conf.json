@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../../bin/strelkad.exe": "strelkad.exe",
+      "../../bin/strelkactl.exe": "strelkactl.exe",
+      "../../engines/sing-box.exe": "engines/sing-box.exe",
+      "../../engines/libcronet.dll": "engines/libcronet.dll",
+      "../../engines/xray.exe": "engines/xray.exe",
+      "../../engines/licenses/sing-box-LICENSE.txt": "licenses/sing-box-LICENSE.txt",
+      "../../engines/licenses/xray-LICENSE.txt": "licenses/xray-LICENSE.txt"
+    }
+  }
+}

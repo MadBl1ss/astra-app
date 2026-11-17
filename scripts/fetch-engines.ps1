@@ -28,7 +28,10 @@
 param(
     [string]$Target,
     [string]$From,
-    [string]$Platform = 'windows-amd64'
+    [string]$Platform = 'windows-amd64',
+    # Only check what is already in the target: exit 0 if every pinned
+    # binary is there with its sum, 1 otherwise. Nothing is downloaded.
+    [switch]$Verify
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +45,24 @@ if (-not $pins) { Write-Error "В engines.json нет платформы $Platfo
 
 function Get-Sha256([string]$Path) {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
+}
+
+if ($Verify) {
+    $bad = 0
+    foreach ($e in $pins) {
+        foreach ($f in $e.files) {
+            $path = Join-Path $Target $f.to
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                Write-Host "  нет $($f.to)"; $bad++; continue
+            }
+            if ($f.sha256 -and (Get-Sha256 $path) -ne $f.sha256) {
+                Write-Host "  $($f.to) не совпал с закреплённым ($($e.name) $($e.version))"; $bad++
+            }
+        }
+    }
+    if ($bad -gt 0) { exit 1 }
+    Write-Host "Движки в $Target — закреплённых версий."
+    exit 0
 }
 
 # Everything is assembled in a staging folder first and moved into the
