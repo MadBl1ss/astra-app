@@ -163,6 +163,15 @@
         ]
       },
       {
+        "domain": [
+          "ip-api.com"
+        ],
+        "outbound": "direct",
+        "process_path_regex": [
+          "(?i)^C:\\\\Program Files\\\\Strelka\\\\strelkad\\.exe$"
+        ]
+      },
+      {
         "ip_is_private": true,
         "outbound": "direct"
       },

@@ -76,6 +76,8 @@ export const ru = {
     noServer: 'сервер не выбран',
     uptime: (d: string) => `работает ${d}`,
     switchLabel: 'VPN',
+    powerOn: 'Включить VPN',
+    powerOff: 'Выключить VPN',
   },
 
   banner: {
@@ -89,11 +91,8 @@ export const ru = {
   },
 
   tracks: {
-    aria: 'Схема: трафик расходится на путь через VPN и путь напрямую',
-    pc: ['Этот', 'компьютер'] as const,
     vpn: 'Через VPN',
     direct: 'Напрямую',
-    internet: 'Интернет',
     noServer: 'Сервер не выбран',
     conns: (n: number) => `${n} ${plural(n, conns)}`,
     down: (speed: string) => `↓ ${speed}`,
@@ -391,6 +390,13 @@ export const ru = {
     themeSystem: 'Как в системе',
     themeDark: 'Тёмная',
     themeLight: 'Светлая',
+    place: 'Откуда луч на глобусе',
+    placeIp: (city: string) => `${city || 'Место'} — по IP. Стрелка уточняет его раз в сутки, запрос идёт мимо VPN.`,
+    placeManual: (city: string) => `${city} — выбрано вручную. Само больше не меняется.`,
+    placeNone: 'Пока по часовому поясу системы: место по IP ещё не определено.',
+    placePick: 'Выбрать город',
+    placeDetect: 'По IP',
+    placeDetectHint: 'Спросить сервис ip-api.com, где этот компьютер, и снова уточнять раз в сутки',
     about: 'О программе',
     appVersion: 'Окно',
     daemonVersion: 'Служба',
@@ -513,4 +519,7 @@ export const mock = {
   badPort: 'Настройка «localProxyPort»: такое значение не подходит.',
   nameEmpty: 'Название не может быть пустым.',
   reportMade: (file: string) => `Собран отчёт для поддержки: ${file}.`,
+  placeDetected: 'Место на глобусе определено по IP.',
+  placeChosen: 'Место на глобусе выбрано вручную.',
+  placeBad: 'Неверные координаты или пустое название города.',
 };

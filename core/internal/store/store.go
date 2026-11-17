@@ -30,6 +30,9 @@ func (p Paths) ProfileFile() string  { return filepath.Join(p.Data, "profile.jso
 func (p Paths) SettingsFile() string { return filepath.Join(p.Data, "settings.json") }
 func (p Paths) StatsFile() string    { return filepath.Join(p.Data, "stats.json") }
 
+// PlaceFile remembers where the computer is, for the window's globe.
+func (p Paths) PlaceFile() string { return filepath.Join(p.Data, "place.json") }
+
 // WarnedFile remembers which subscription warnings were already shown.
 func (p Paths) WarnedFile() string { return filepath.Join(p.Data, "warned.json") }
 

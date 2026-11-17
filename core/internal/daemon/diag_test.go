@@ -43,6 +43,8 @@ func TestDiagExportPacksLogsWithoutKeys(t *testing.T) {
 	r := startRig(t, paths, "ok")
 	r.call(proto.MethodVPNStart, nil, nil)
 	r.waitPhase(proto.PhaseOn)
+	// Where the user lives tells support nothing either.
+	r.call(proto.MethodPlaceSet, proto.PlaceSetParams{Lat: 61.25, Lon: 73.42, City: "Выдумград"}, nil)
 
 	var res proto.DiagExportResult
 	if err := r.longCall(proto.MethodDiagExport, nil, &res); err != nil {
@@ -77,6 +79,8 @@ func TestDiagExportPacksLogsWithoutKeys(t *testing.T) {
 		"11111111-1111-4111-8111-111111111111",
 		"tok0123456789abcdefXYZ",
 		"hwid-made-up-0123456789",
+		"Выдумград",
+		"73.42",
 	}
 	for name, data := range got {
 		for _, s := range secrets {

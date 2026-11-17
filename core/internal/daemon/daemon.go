@@ -17,6 +17,7 @@ import (
 	"strelka/internal/clash"
 	"strelka/internal/confgen"
 	"strelka/internal/engine"
+	"strelka/internal/geo"
 	"strelka/internal/guard"
 	"strelka/internal/health"
 	"strelka/internal/incident"
@@ -84,6 +85,11 @@ type Options struct {
 	// FindTunnel looks the tunnel adapter up for the guard's permit; nil
 	// asks the system for the adapter named confgen.TUNName.
 	FindTunnel func() (luid uint64, ok bool)
+
+	// Locator finds where the computer is, for the window's globe. Nil means
+	// never, and like Guard it is nil unless the caller says otherwise: only
+	// cmd/strelkad asks a service on the internet, a test never does.
+	Locator *geo.Locator
 
 	// Logf receives the daemon's own diagnostics (English, for the console).
 	Logf func(format string, a ...any)
@@ -177,6 +183,7 @@ type Daemon struct {
 	held        map[string]proto.Toast // toasts waiting for somebody to show them
 
 	gs guardState // the kill switch, see guard.go
+	ps placeState // where the computer is, see place.go
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.
@@ -239,6 +246,7 @@ func New(opts Options) (*Daemon, error) {
 		return nil, fmt.Errorf("rules folder: %w", err)
 	}
 	d.stats = stats.Load(opts.Paths.StatsFile())
+	d.loadPlace()
 
 	for _, name := range []string{boxName, xrayName} {
 		exe := opts.Paths.Engine(name)
@@ -339,6 +347,9 @@ func (d *Daemon) loop(ctx context.Context) {
 		}
 	}
 	d.checkSubs()
+	// Right away rather than with the first minute: on a first run the
+	// globe would otherwise start from the time zone's guess.
+	d.autoPlace(time.Now())
 	d.touch()
 
 	tick := time.NewTicker(d.opts.HealthTick)
@@ -383,6 +394,7 @@ func (d *Daemon) loop(ctx context.Context) {
 			auto.Reset(time.Minute)
 			if stopping != nil {
 				d.autoUpdate()
+				d.autoPlace(time.Now())
 			}
 		case <-stopping:
 			stopping = nil // handled once
@@ -458,6 +470,10 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		return d.diagExport(c)
 	case proto.MethodGuardStatus:
 		result = d.guardStatus()
+	case proto.MethodPlaceDetect:
+		return d.placeDetect(c)
+	case proto.MethodPlaceSet:
+		result, err = d.placeSet(c)
 	default:
 		return d.dispatchProfile(c)
 	}

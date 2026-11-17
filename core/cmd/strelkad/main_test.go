@@ -64,11 +64,12 @@ func TestInterruptStopsTheEngineAndExitsCleanly(t *testing.T) {
 
 	// --no-guard: this daemon switches the VPN on for real, and in an
 	// administrator's console a real kill switch would close the machine's
-	// internet for the length of the test.
+	// internet for the length of the test. --no-locate: a test asks no
+	// service on the internet where the machine is.
 
 	daemon := exec.Command(self)
 	daemon.Env = append(os.Environ(),
-		envDaemonArgs+"="+strings.Join([]string{"run", "--data", paths.Data, "--engines", paths.Engines, "--pipe", pipe, "--no-guard"}, "\x1f"),
+		envDaemonArgs+"="+strings.Join([]string{"run", "--data", paths.Data, "--engines", paths.Engines, "--pipe", pipe, "--no-guard", "--no-locate"}, "\x1f"),
 		enginetest.EnvDir+"="+paths.Data, // inherited by the engine
 	)
 	var out bytes.Buffer

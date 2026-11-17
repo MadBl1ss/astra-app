@@ -94,6 +94,15 @@ type Input struct {
 	// (see ExactPath); empty drops the exemption rule.
 	XrayMatch string
 
+	// SelfMatch (the daemon's own full path, see ExactPath) and SelfHosts
+	// send the daemon's requests to those hosts past the VPN, whatever the
+	// mode: it asks the geo service where the computer is, and through the
+	// VPN the answer would be the server's country. Both conditions hold at
+	// once, so a browser on the same site goes the usual way. Either one
+	// empty drops the rule.
+	SelfMatch string
+	SelfHosts []string
+
 	Controller string // Clash API address, host:port
 	Secret     string
 }
@@ -202,6 +211,16 @@ func Build(in Input) ([]byte, error) {
 				continue
 			}
 			r["process_path_regex"] = []any{in.XrayMatch}
+		case "self":
+			if in.SelfMatch == "" || len(in.SelfHosts) == 0 {
+				continue
+			}
+			r["process_path_regex"] = []any{in.SelfMatch}
+			hosts := make([]any, len(in.SelfHosts))
+			for i, h := range in.SelfHosts {
+				hosts[i] = h
+			}
+			r["domain"] = hosts
 		case "local-proxy":
 			if localProxy == 0 {
 				continue

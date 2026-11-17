@@ -1,6 +1,6 @@
 // strelkad is the Strelka daemon. At this stage it runs in a console only:
 //
-//	strelkad run --data DIR --engines DIR [--no-tun] [--no-guard] [--pipe NAME]
+//	strelkad run --data DIR --engines DIR [--no-tun] [--no-guard] [--no-locate] [--pipe NAME]
 //	strelkad guard test [--hold 20s] | guard reset
 //
 // Running under the Windows service manager and systemd arrives with the
@@ -19,6 +19,7 @@ import (
 
 	"strelka/internal/confgen"
 	"strelka/internal/daemon"
+	"strelka/internal/geo"
 	"strelka/internal/guard"
 	"strelka/internal/ipc"
 	"strelka/internal/store"
@@ -51,7 +52,7 @@ func realMain(args []string) int {
 func usage() {
 	fmt.Fprint(os.Stderr, `Служба Стрелки.
 
-  strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--no-guard] [--pipe ИМЯ]
+  strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--no-guard] [--no-locate] [--pipe ИМЯ]
   strelkad guard test [--hold 20s] [--engines ПАПКА] [--no-lan] [--out ФАЙЛ]
   strelkad guard reset
   strelkad version
@@ -61,6 +62,7 @@ func usage() {
   --no-tun   без сетевого адаптера: вместо него локальный прокси на 127.0.0.1:20808.
              Не требует прав администратора и не мешает VPN, который уже работает
   --no-guard без замка: фильтры сетевого экрана не ставятся, что бы ни стояло в настройках
+  --no-locate не спрашивать геосервис, где компьютер (для глобуса в окне); город можно выбрать вручную
   --pipe     имя канала; по умолчанию strelka-dev, чтобы не мешать установленной службе
 
   guard test   поставить фильтры замка на время и снять: проверка самих фильтров.
@@ -77,6 +79,7 @@ func run(args []string) int {
 	engines := fs.String("engines", "", "")
 	noTUN := fs.Bool("no-tun", false, "")
 	noGuard := fs.Bool("no-guard", false, "")
+	noLocate := fs.Bool("no-locate", false, "")
 	pipe := fs.String("pipe", ipc.DevName, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -105,6 +108,11 @@ func run(args []string) int {
 		// Without the TUN there is nothing for the other programs to go
 		// through: a guard would simply cut the machine off.
 		opts.Guard = guard.New(logf)
+	}
+	if !*noLocate {
+		// The one request to a service on the internet the daemon makes by
+		// itself, for a picture; tests and offline runs turn it off.
+		opts.Locator = geo.New(geo.DefaultURL)
 	}
 	d, err := daemon.New(opts)
 	if err != nil {
