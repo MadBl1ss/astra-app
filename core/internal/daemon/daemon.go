@@ -438,7 +438,9 @@ func (d *Daemon) shutdown() {
 // were sent; the answer is waited for outside the read loop.
 func (d *Daemon) handle(c *ipc.Conn, method string, params json.RawMessage) func() (any, *proto.Error) {
 	call := rpcCall{conn: c, method: method, params: params, reply: make(chan rpcReply, 1)}
-	gone := func() (any, *proto.Error) { return nil, proto.Errorf(proto.CodeBusy, "Служба завершает работу.") }
+	gone := func() (any, *proto.Error) {
+		return nil, proto.Errorf(proto.CodeBusy, "Служба завершает работу.")
+	}
 	select {
 	case d.inbox <- call:
 	case <-d.done:
