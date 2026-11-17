@@ -370,6 +370,21 @@ type GuardStatusResult struct {
 	TunLUID uint64 `json:"tunLuid"`
 }
 
+// Methods added with the globe on Home. place.detect answers with the new
+// Place itself.
+const (
+	MethodPlaceDetect = "place.detect"
+	MethodPlaceSet    = "place.set"
+)
+
+// PlaceSetParams is a place the user chose by hand.
+type PlaceSetParams struct {
+	Lat     float64 `json:"lat"`
+	Lon     float64 `json:"lon"`
+	City    string  `json:"city"`
+	Country *string `json:"country,omitempty"`
+}
+
 // DiagExportResult is where the report archive was written.
 type DiagExportResult struct {
 	Path string `json:"path"`

@@ -82,7 +82,26 @@ type State struct {
 	Incidents []Incident `json:"incidents"`
 	Settings  Settings   `json:"settings"`
 	Busy      *string    `json:"busy"`
+	// Place is where the computer is, for the globe on the window's Home;
+	// nil while it is not known.
+	Place *Place `json:"place"`
 }
+
+// Place is one end of the globe's beam.
+type Place struct {
+	Lat     float64   `json:"lat"`
+	Lon     float64   `json:"lon"`
+	City    string    `json:"city"` // what to show; may be empty
+	Country *string   `json:"country"`
+	Source  string    `json:"source"` // ip | manual
+	At      time.Time `json:"at"`     // when it was found or chosen
+}
+
+// Values of place.source.
+const (
+	PlaceIP     = "ip"
+	PlaceManual = "manual"
+)
 
 type VPN struct {
 	Desired    string     `json:"desired"`

@@ -75,6 +75,20 @@ export interface State {
   incidents: Incident[];
   settings: Settings;
   busy: Busy | null;
+  /** Where the computer is, for the globe on Home; null while not known. */
+  place: Place | null;
+}
+
+export interface Place {
+  lat: number;
+  lon: number;
+  /** What to show; may be empty. */
+  city: string;
+  country: string | null;
+  /** "ip": found by the address; "manual": chosen in Settings. */
+  source: 'ip' | 'manual';
+  /** When it was found or chosen. */
+  at: string;
 }
 
 export interface Server {
@@ -263,6 +277,8 @@ export interface Methods {
   'rules.processes': { params: undefined; result: { processes: ProcessInfo[] } };
   'diag.export': { params: undefined; result: { path: string } };
   'engine.versions': { params: undefined; result: { engines: EngineVersion[] } };
+  'place.detect': { params: undefined; result: Place };
+  'place.set': { params: { lat: number; lon: number; city: string; country?: string }; result: Empty };
 }
 
 export type MethodName = keyof Methods;
