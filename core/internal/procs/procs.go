@@ -10,6 +10,10 @@ import (
 	"strelka/proto"
 )
 
+// All returns every running user program whose file could be read, with
+// repeats: two copies of one name from two folders are two entries.
+func All() ([]proto.ProcessInfo, error) { return list() }
+
 // List returns the running user programs, one entry per file name, sorted
 // by name.
 func List() ([]proto.ProcessInfo, error) {
