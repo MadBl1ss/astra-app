@@ -28,6 +28,7 @@ export type IncidentKind =
   | 'all_servers_down'
   | 'engine_failed'
   | 'helper_down'
+  | 'blocked'
   | 'sub_expiring'
   | 'sub_expired'
   | 'sub_traffic';

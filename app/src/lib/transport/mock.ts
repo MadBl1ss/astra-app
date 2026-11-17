@@ -97,7 +97,7 @@ const DIRECT = { down: 4_400_000, up: 245_000 };
 const CHURN = 0.06;
 
 const SUB_INCIDENTS: Incident['kind'][] = ['sub_expiring', 'sub_expired', 'sub_traffic'];
-const VPN_INCIDENTS: Incident['kind'][] = ['server_down', 'all_servers_down', 'engine_failed', 'helper_down'];
+const VPN_INCIDENTS: Incident['kind'][] = ['server_down', 'all_servers_down', 'engine_failed', 'helper_down', 'blocked'];
 
 /**
  * A daemon in memory. It starts from a fixture and answers the methods the
