@@ -76,6 +76,8 @@ export const ru = {
     noServer: 'сервер не выбран',
     uptime: (d: string) => `работает ${d}`,
     switchLabel: 'VPN',
+    powerOn: 'Включить VPN',
+    powerOff: 'Выключить VPN',
   },
 
   banner: {
@@ -89,11 +91,8 @@ export const ru = {
   },
 
   tracks: {
-    aria: 'Схема: трафик расходится на путь через VPN и путь напрямую',
-    pc: ['Этот', 'компьютер'] as const,
     vpn: 'Через VPN',
     direct: 'Напрямую',
-    internet: 'Интернет',
     noServer: 'Сервер не выбран',
     conns: (n: number) => `${n} ${plural(n, conns)}`,
     down: (speed: string) => `↓ ${speed}`,

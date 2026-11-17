@@ -14,6 +14,21 @@
   --warn: #f5b84b;
   --bad: #f2555a;
 
+  /* The globe of Home is washed with a gradient of its state: from the
+     state's own colour to a neighbour of it. Plain hex only: the canvas
+     reads these and blends them itself. */
+  --globe-ok-a: #3ddc97;
+  --globe-ok-b: #2fa8f0;
+  --globe-warn-a: #f5b84b;
+  --globe-warn-b: #f0703f;
+  --globe-bad-a: #f2555a;
+  --globe-bad-b: #c2409a;
+  --globe-off-a: #6f8fd0;
+  --globe-off-b: #9278d6;
+  /* What runs along the beam, and how visible the dots of the sea are. */
+  --globe-spark: #ffffff;
+  --globe-sea: 0.3;
+
   /* The first family holds nothing but flag emoji and exists only where the
      system cannot draw them (see main.ts); everything else falls through. */
   --font: 'Twemoji Country Flags', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -56,6 +71,17 @@
   --direct: #6b7890;
   --warn: #b97a09;
   --bad: #d23b41;
+
+  --globe-ok-a: #0f9d63;
+  --globe-ok-b: #0b7fc9;
+  --globe-warn-a: #b97a09;
+  --globe-warn-b: #c9521c;
+  --globe-bad-a: #d23b41;
+  --globe-bad-b: #a52c86;
+  --globe-off-a: #5f7fc0;
+  --globe-off-b: #7a64b8;
+  --globe-spark: #14171c;
+  --globe-sea: 0.38;
 
   --shadow-pop: 0 8px 28px rgb(20 23 28 / 0.14);
 
