@@ -95,6 +95,12 @@
         "outbound": "direct"
       },
       {
+        "_strelka": "self",
+        "process_path_regex": [],
+        "domain": [],
+        "outbound": "direct"
+      },
+      {
         "ip_is_private": true,
         "outbound": "direct"
       },

@@ -64,8 +64,11 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// A fixed pattern keeps the golden files the same on every OS.
-const testXrayMatch = `(?i)^C:\\Program Files\\Strelka\\xray\.exe$`
+// Fixed patterns keep the golden files the same on every OS.
+const (
+	testXrayMatch = `(?i)^C:\\Program Files\\Strelka\\xray\.exe$`
+	testSelfMatch = `(?i)^C:\\Program Files\\Strelka\\strelkad\.exe$`
+)
 
 func base(t *testing.T, useXray bool, only ...string) (Input, []xray.Server) {
 	srv, xs := servers(t, useXray, only...)
@@ -75,9 +78,49 @@ func base(t *testing.T, useXray bool, only ...string) (Input, []xray.Server) {
 		IPv6:        "tunnel",
 		StrictRoute: true,
 		XrayMatch:   testXrayMatch,
+		SelfMatch:   testSelfMatch,
+		SelfHosts:   []string{"ip-api.com"},
 		Controller:  "127.0.0.1:9090",
 		Secret:      "made-up-secret",
 	}, xs
+}
+
+// The daemon's own request about the place goes past the VPN even in
+// "all traffic" mode, and only that request: the rule needs the daemon's
+// path and the service's name at once.
+func TestSelfRuleSendsOnlyTheDaemonDirect(t *testing.T) {
+	in, _ := base(t, false, "t-DE")
+	in.Mode = proto.ModeGlobal
+	raw, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := testjson.Get(raw, "route.rules")
+	self := strings.Index(rules, `strelkad`)
+	glob := strings.Index(rules, "clash_mode")
+	if self < 0 || glob < 0 || self > glob {
+		t.Fatalf("правило службы должно стоять раньше «весь трафик»: %s", rules)
+	}
+	rule := rules[strings.LastIndex(rules[:self], "{"):]
+	rule = rule[:strings.Index(rule, "}")+1]
+	if !strings.Contains(rule, `"domain":["ip-api.com"]`) || !strings.Contains(rule, `"outbound":"direct"`) {
+		t.Errorf("правило службы — путь и имя сервиса сразу, напрямую: %s", rule)
+	}
+
+	for _, drop := range []func(*Input){
+		func(in *Input) { in.SelfMatch = "" },
+		func(in *Input) { in.SelfHosts = nil },
+	} {
+		in, _ := base(t, false, "t-DE")
+		drop(&in)
+		raw, err := Build(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(testjson.Get(raw, "route.rules"), "strelkad") || strings.Contains(string(raw), `"domain":[]`) {
+			t.Errorf("без пути или без имени правила быть не должно: %s", testjson.Get(raw, "route.rules"))
+		}
+	}
 }
 
 type goldenCase struct {
@@ -250,7 +293,7 @@ func TestBuildVariants(t *testing.T) {
 	if testjson.Get(tun, "address") != `["172.19.0.1/30"]` || testjson.Get(tun, "strict_route") != "false" {
 		t.Errorf("IPv6 закрыт, strict_route выключен: %s", tun)
 	}
-	if strings.Contains(testjson.Get(raw, "route.rules"), "process_path_regex") {
+	if strings.Contains(testjson.Get(raw, "route.rules"), "xray") {
 		t.Error("без Xray правило для него не нужно")
 	}
 

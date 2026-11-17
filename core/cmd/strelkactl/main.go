@@ -65,6 +65,10 @@ func usage() {
   import-legacy ПАПКА    перенести подписки, правила и выбор из старой Стрелки
   versions               версии службы и движков
   report                 собрать отчёт для поддержки (архив логов без ключей)
+  place                  где компьютер — для глобуса в окне
+  place detect           определить по IP сейчас и вернуться к автоматическому
+  place set ШИРОТА ДОЛГОТА ГОРОД [СТРАНА]
+                         выбрать вручную; СТРАНА — код из двух букв
 
   --pipe     имя канала; по умолчанию $STRELKA_PIPE или strelka-dev
   --no-wait  для start, stop, restart: не ждать, пока фаза сменится
@@ -92,7 +96,7 @@ func realMain(args []string) int {
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
 		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy",
-		"journal", "action", "versions", "report", "guard":
+		"journal", "action", "versions", "report", "guard", "place":
 	case "help":
 		usage()
 		return 0
@@ -163,6 +167,8 @@ func realMain(args []string) int {
 		err = reportCmd(ctx, c)
 	case "guard":
 		err = guardCmd(ctx, c)
+	case "place":
+		err = placeCmd(ctx, c, rest)
 	}
 	if err != nil {
 		return fail(err)
@@ -232,6 +238,7 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 	fmt.Printf("Сервер:  %s (всего серверов: %d, подписок: %d)\n", server, len(st.Servers), len(st.Subs))
 	fmt.Printf("Диагноз: %s\n", healthLine(st.Health))
 	fmt.Printf("Замок:   %s\n", guardLine(st.Guard))
+	fmt.Printf("Место:   %s\n", placeLine(st.Place))
 	for _, inc := range st.Incidents {
 		fmt.Printf("Инцидент %s [%s]: %s. %s\n", inc.ID, inc.Severity, inc.Title, inc.Body)
 	}

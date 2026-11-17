@@ -70,6 +70,7 @@ func (d *Daemon) planFor(p *profile.Profile, s proto.Settings, prev map[string]i
 	if len(pl.xray) > 0 {
 		pl.in.XrayMatch = confgen.ExactPath(d.opts.Paths.Engine(xrayName))
 	}
+	pl.in.SelfMatch, pl.in.SelfHosts = d.selfRule()
 	return pl, nil
 }
 

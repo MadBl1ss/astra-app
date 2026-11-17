@@ -121,7 +121,7 @@ type reportInput struct {
 func (d *Daemon) diagExport(c rpcCall) (any, *proto.Error, bool) {
 	in := reportInput{
 		paths:   d.opts.Paths,
-		state:   d.snapshot(),
+		state:   d.reportState(),
 		rules:   proto.RulesGetResult{VPN: cloneList(d.rules.VPN), Direct: cloneList(d.rules.Direct), Auto: []proto.AutoList{}},
 		engines: d.engineStatus(),
 		secrets: d.secrets(),
@@ -140,6 +140,18 @@ func (d *Daemon) diagExport(c rpcCall) (any, *proto.Error, bool) {
 		c.reply <- rpcReply{result: proto.DiagExportResult{Path: path}}
 	}()
 	return nil, nil, true
+}
+
+// reportState is the state as the report shows it: without the place. Where
+// the user lives tells support nothing about why the VPN does not work.
+func (d *Daemon) reportState() json.RawMessage {
+	st := d.st
+	st.Place = nil
+	raw, err := json.Marshal(st)
+	if err != nil {
+		panic(fmt.Sprintf("daemon: state does not marshal: %v", err))
+	}
+	return raw
 }
 
 // secrets lists what would let someone use the user's servers or
