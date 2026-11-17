@@ -687,3 +687,117 @@ func TestIDsContinueAfterARestart(t *testing.T) {
 		t.Errorf("первый id нового дня %q", id)
 	}
 }
+
+// ---- the kill switch ---------------------------------------------------------
+
+// A restart that drags on with the internet closed is told at once, grace
+// window or not; it becomes "will not start" in place when the engine gives
+// up, and one "works again" ends it.
+func TestClosedInternetIsOneCriticalIncident(t *testing.T) {
+	m := New(health.Default())
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	var journal []Entry
+	var toasts []proto.Toast
+	see := func(in Input) {
+		in.Level = proto.NotifyImportant
+		out := m.Observe(now, in)
+		journal, toasts = append(journal, out.Journal...), append(toasts, out.Toasts...)
+	}
+	recovering := health.Diagnosis{Verdict: proto.VerdictEngineRecovering, Network: true}
+
+	// The engine is restarting: by itself that is nobody's business.
+	see(Input{Diag: recovering})
+	if len(toasts) != 0 || len(journal) != 0 {
+		t.Fatalf("перезапуск без замка: %d уведомлений, %d записей", len(toasts), len(journal))
+	}
+
+	m.UserAction(now) // the user pressed "restart"; the closed internet is told all the same
+	see(Input{Diag: recovering, Blocking: true})
+	if len(toasts) != 1 {
+		t.Fatalf("уведомлений %d, жду одно", len(toasts))
+	}
+	first := toasts[0]
+	if first.Title != titleBlocked || first.Severity != proto.SeverityCritical || !first.Sticky ||
+		len(first.Actions) != 2 || first.Actions[0].ID != proto.ActionRetry || first.Actions[1].ID != proto.ActionRelease {
+		t.Errorf("уведомление: %+v", first)
+	}
+	if e := journal[0]; e.Cat != proto.CatGuard || e.Level != proto.LevelCritical || e.Incident != first.ID {
+		t.Errorf("запись: %+v", e)
+	}
+	list := m.Incidents()
+	if len(list) != 1 || list[0].Kind != proto.IncidentBlocked || list[0].Severity != proto.SeverityCritical {
+		t.Fatalf("State.incidents: %+v", list)
+	}
+
+	// Seen again with nothing new: nothing is said twice.
+	now = now.Add(time.Second)
+	see(Input{Diag: recovering, Blocking: true})
+	if len(toasts) != 1 || len(journal) != 1 {
+		t.Fatalf("повтор: %d уведомлений, %d записей", len(toasts), len(journal))
+	}
+
+	// The engine gives up: the same incident, the toast is replaced.
+	now = now.Add(5 * time.Second)
+	failed := health.Diagnosis{Verdict: proto.VerdictEngineFailed, Reason: proto.FailTUN, Network: true}
+	see(Input{Diag: failed, Blocking: true, FailText: "Не создаётся сетевой адаптер VPN."})
+	if len(toasts) != 2 || toasts[1].ID != first.ID {
+		t.Fatalf("после отказа движка: %+v", toasts)
+	}
+	if got := toasts[1]; got.Title != titleBlocked || got.Body != "VPN не запускается: не создаётся сетевой адаптер VPN." ||
+		got.Actions[1].ID != proto.ActionRelease {
+		t.Errorf("уведомление об отказе: %+v", got)
+	}
+	if list := m.Incidents(); len(list) != 1 || list[0].ID != first.ID || list[0].Kind != proto.IncidentEngineFailed {
+		t.Errorf("State.incidents после отказа: %+v", list)
+	}
+
+	// "Try again" worked: ok has to hold before the end is told, once.
+	ok := health.Diagnosis{Verdict: proto.VerdictOK, Network: true, Internet: true}
+	now = now.Add(3 * time.Second)
+	see(Input{Diag: ok})
+	now = now.Add(health.Default().CloseAfterOK)
+	see(Input{Diag: ok})
+	if len(toasts) != 3 || toasts[2].Title != titleBack || toasts[2].ID != first.ID {
+		t.Fatalf("конец: %+v", toasts)
+	}
+	if len(m.Incidents()) != 0 {
+		t.Errorf("инцидент остался открытым: %+v", m.Incidents())
+	}
+}
+
+// "Let the internet through" switches the VPN off: the toast is taken away,
+// there is nothing to celebrate.
+func TestReleasingTheGuardTakesTheToastAway(t *testing.T) {
+	m := New(health.Default())
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	recovering := health.Diagnosis{Verdict: proto.VerdictEngineRecovering, Network: true}
+	out := m.Observe(now, Input{Diag: recovering, Blocking: true, Level: proto.NotifyImportant})
+	if len(out.Toasts) != 1 {
+		t.Fatalf("уведомлений %d", len(out.Toasts))
+	}
+	id := out.Toasts[0].ID
+	now = now.Add(2 * time.Second)
+	out = m.Observe(now, Input{Diag: health.Diagnosis{Verdict: proto.VerdictSettling}, Off: true, Level: proto.NotifyImportant})
+	if len(out.Toasts) != 1 || !out.Toasts[0].Close || out.Toasts[0].ID != id {
+		t.Errorf("после снятия: %+v", out.Toasts)
+	}
+	if len(m.Incidents()) != 0 {
+		t.Errorf("инцидент остался: %+v", m.Incidents())
+	}
+}
+
+// The end of a closed internet that was the whole trouble has its own words.
+func TestClosedInternetEndsWithItsOwnWords(t *testing.T) {
+	m := New(health.Default())
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	level := proto.NotifyImportant
+	m.Observe(now, Input{Diag: health.Diagnosis{Verdict: proto.VerdictEngineRecovering}, Blocking: true, Level: level})
+	ok := health.Diagnosis{Verdict: proto.VerdictOK, Network: true, Internet: true}
+	now = now.Add(40 * time.Second)
+	m.Observe(now, Input{Diag: ok, Level: level})
+	now = now.Add(health.Default().CloseAfterOK)
+	out := m.Observe(now, Input{Diag: ok, Level: level})
+	if len(out.Toasts) != 1 || !strings.HasPrefix(out.Toasts[0].Body, "VPN снова работает, интернет открыт. Был закрыт") {
+		t.Errorf("конец: %+v", out.Toasts)
+	}
+}

@@ -101,6 +101,14 @@ type Tuning struct {
 	Grace time.Duration
 	// SubWarnBefore the subscription runs out the user is told once.
 	SubWarnBefore time.Duration
+
+	// ---- the kill switch --------------------------------------------------
+
+	// BlockAfter: the kill switch keeps the internet closed from the moment
+	// the engine goes down, but an ordinary restart is over in a second or
+	// two. Only an engine that stays down this long is "the internet is
+	// closed" - a state the user has to be told about.
+	BlockAfter time.Duration
 }
 
 // Default is the tuning the service ships with.
@@ -140,6 +148,8 @@ func Default() Tuning {
 		CalmFor:        5 * time.Minute,
 		Grace:          20 * time.Second,
 		SubWarnBefore:  72 * time.Hour,
+
+		BlockAfter: 10 * time.Second,
 	}
 }
 

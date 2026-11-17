@@ -121,6 +121,7 @@ func (d *Daemon) judge(now time.Time) {
 	if d.st.VPN.FailText != nil {
 		in.FailText = *d.st.VPN.FailText
 	}
+	in.Blocking = d.st.Guard.Blocking
 	moveTo := ""
 	if diag.Verdict == proto.VerdictServerDown && len(diag.Alive) > 0 {
 		offer := d.named(diag.Alive[0])
@@ -268,6 +269,9 @@ func (d *Daemon) tick() {
 	wall := time.Now().Round(0)
 	slept := !d.lastTick.IsZero() && wall.Sub(d.lastTick) > d.tune.SleepGap
 	d.lastTick = wall
+	// Before the automata: "blocking" is a matter of time, and what the
+	// incidents say this tick depends on it.
+	d.syncGuard(wall, false)
 	if slept {
 		d.opts.Logf("health: woke up after a gap in the clock")
 		d.feed(health.Wake{})
@@ -479,7 +483,9 @@ func (d *Daemon) incidentAction(c rpcCall) (any, *proto.Error) {
 		d.startSubsJob(&subsJob{all: true})
 		return nil, nil
 	case p.Action == proto.ActionRelease:
-		return nil, proto.Errorf(proto.CodeUnsupported, "Замка в этой версии ещё нет, снимать нечего.")
+		// "Let the internet through without the VPN" is switching the VPN
+		// off: the one ordinary way the guard is ever lifted.
+		return d.vpnStop()
 	case p.Action == proto.ActionOpen, p.Action == proto.ActionDismiss:
 		return nil, nil // the application's own; nothing for the daemon to do
 	}

@@ -38,7 +38,9 @@ func usage() {
   journal [-n ЧИСЛО] [--problems] [--incident НОМЕР]
                          журнал, свежие записи внизу; --problems — только проблемы
   action ДЕЙСТВИЕ [НОМЕР]
-                         нажать кнопку уведомления: switch:СЕРВЕР, retry, update_subs
+                         нажать кнопку уведомления: switch:СЕРВЕР, retry, update_subs,
+                         release (разрешить интернет без VPN)
+  guard                  замок: включён ли, сколько фильтров стоит, закрыт ли интернет
   call МЕТОД [JSON]      вызвать любой метод службы и напечатать ответ
 
   subs [list]            подписки
@@ -90,7 +92,7 @@ func realMain(args []string) int {
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
 		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy",
-		"journal", "action", "versions", "report":
+		"journal", "action", "versions", "report", "guard":
 	case "help":
 		usage()
 		return 0
@@ -159,6 +161,8 @@ func realMain(args []string) int {
 		err = versionsCmd(ctx, c, hello)
 	case "report":
 		err = reportCmd(ctx, c)
+	case "guard":
+		err = guardCmd(ctx, c)
 	}
 	if err != nil {
 		return fail(err)
@@ -227,6 +231,7 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 	}
 	fmt.Printf("Сервер:  %s (всего серверов: %d, подписок: %d)\n", server, len(st.Servers), len(st.Subs))
 	fmt.Printf("Диагноз: %s\n", healthLine(st.Health))
+	fmt.Printf("Замок:   %s\n", guardLine(st.Guard))
 	for _, inc := range st.Incidents {
 		fmt.Printf("Инцидент %s [%s]: %s. %s\n", inc.ID, inc.Severity, inc.Title, inc.Body)
 	}
@@ -243,6 +248,40 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 		fmt.Printf("         %s\n", e.Path)
 	}
 	fmt.Printf("Служба:  %s, протокол %d, %s, состояние rev %d\n", hello.Version, hello.Proto, hello.OS, st.Rev)
+	return nil
+}
+
+// guardLine words State.guard: the setting, whether the filters stand, and
+// whether they are what keeps the internet closed right now.
+func guardLine(g proto.Guard) string {
+	switch {
+	case !g.Enabled:
+		return "выключен в настройках"
+	case g.Blocking:
+		return "держит интернет закрытым: VPN не работает"
+	case g.Engaged:
+		return "включён"
+	}
+	return "не стоит (VPN выключен или фильтры не поставились)"
+}
+
+func guardCmd(ctx context.Context, c *ipc.Client) error {
+	var st proto.State
+	if err := call(ctx, c, proto.MethodStateGet, nil, &st); err != nil {
+		return err
+	}
+	var gs proto.GuardStatusResult
+	if err := call(ctx, c, proto.MethodGuardStatus, nil, &gs); err != nil {
+		return err
+	}
+	fmt.Printf("Замок:           %s\n", guardLine(st.Guard))
+	fmt.Printf("Локальная сеть:  %s\n", map[bool]string{true: "разрешена", false: "закрыта"}[st.Guard.AllowLAN])
+	fmt.Printf("Фильтров стоит:  %d\n", gs.Filters)
+	if gs.TunLUID != 0 {
+		fmt.Printf("Адаптер VPN:     разрешён (LUID %#x)\n", gs.TunLUID)
+	} else if gs.Engaged {
+		fmt.Println("Адаптер VPN:     не найден — через него сейчас ничего не пройдёт")
+	}
 	return nil
 }
 

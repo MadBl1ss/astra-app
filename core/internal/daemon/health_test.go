@@ -27,6 +27,7 @@ func quickHealth(o *Options) {
 	t.ConfirmSpan, t.DownProbeEvery, t.RecoverRetry = 120*ms, 100*ms, 20*ms
 	t.SettleAfterNet, t.DirectFresh, t.OthersFresh = 150*ms, 150*ms, 600*ms
 	t.HelperHold = 100 * ms
+	t.BlockAfter = 100 * ms
 	t.CloseAfterOK, t.ReopenWithin, t.CalmFor, t.Grace = 100*ms, 3*time.Second, 3*time.Second, 200*ms
 	o.Health, o.HealthTick = &t, 10*ms
 }
@@ -444,7 +445,6 @@ func TestIncidentActionErrorsAndJournalPaging(t *testing.T) {
 	for action, code := range map[string]int{
 		"switch:нет-такого": proto.CodeNotFound,
 		"сломать":           proto.CodeInvalidParams,
-		proto.ActionRelease: proto.CodeUnsupported,
 		proto.ActionOpen:    0,
 		proto.ActionDismiss: 0,
 	} {

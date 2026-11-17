@@ -356,6 +356,20 @@ type EngineVersion struct {
 	Version *string `json:"version"` // null: no such file, or it did not say
 }
 
+// Methods added with the kill switch.
+const (
+	MethodGuardStatus = "guard.status"
+)
+
+// GuardStatusResult is the answer to the debug method guard.status. TunLUID
+// is a 64-bit number that does not fit a JavaScript one; the window has no
+// use for it.
+type GuardStatusResult struct {
+	Engaged bool   `json:"engaged"`
+	Filters int    `json:"filters"`
+	TunLUID uint64 `json:"tunLuid"`
+}
+
 // DiagExportResult is where the report archive was written.
 type DiagExportResult struct {
 	Path string `json:"path"`

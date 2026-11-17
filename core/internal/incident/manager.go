@@ -50,6 +50,19 @@ type Input struct {
 	Moved *Named
 	// FailText words the reason of engine_failed.
 	FailText string
+	// Blocking: the kill switch has kept the internet closed for longer than
+	// a restart takes. With engine_failed it changes the wording; with
+	// anything else it is the trouble, whatever the verdict says.
+	Blocking bool
+}
+
+// kindOf names the trouble an input stands for: the verdict, unless the
+// kill switch is what the user feels.
+func kindOf(in Input) string {
+	if in.Blocking && in.Diag.Verdict != proto.VerdictEngineFailed {
+		return proto.IncidentBlocked
+	}
+	return in.Diag.Verdict
 }
 
 // Entry is a line for the journal.
@@ -141,8 +154,10 @@ func (m *Manager) nextID(now time.Time) string {
 // switched or refreshed something, and what breaks next is that.
 func (m *Manager) UserAction(now time.Time) { m.graceUntil = now.Add(m.t.Grace) }
 
-func trouble(verdict string) bool {
-	switch verdict {
+func trouble(kind string) bool {
+	switch kind {
+	case proto.IncidentBlocked:
+		return true
 	case proto.VerdictServerDown, proto.VerdictAllServersDown, proto.VerdictNoInternet, proto.VerdictNoNetwork,
 		proto.VerdictDegraded, proto.VerdictEngineFailed, proto.VerdictHelperDown:
 		return true
@@ -155,14 +170,15 @@ func trouble(verdict string) bool {
 // us; a shaky connection is a matter for the journal and the tray icon.
 func carded(kind string) bool {
 	switch kind {
-	case proto.VerdictServerDown, proto.VerdictAllServersDown, proto.VerdictEngineFailed, proto.VerdictHelperDown:
+	case proto.VerdictServerDown, proto.VerdictAllServersDown, proto.VerdictEngineFailed, proto.VerdictHelperDown,
+		proto.IncidentBlocked:
 		return true
 	}
 	return false
 }
 
 func severity(kind string) string {
-	if kind == proto.VerdictEngineFailed {
+	if kind == proto.VerdictEngineFailed || kind == proto.IncidentBlocked {
 		return proto.SeverityCritical
 	}
 	return proto.SeverityProblem
@@ -174,6 +190,8 @@ func category(kind string) string {
 		return proto.CatServer
 	case proto.VerdictNoInternet, proto.VerdictNoNetwork:
 		return proto.CatSystem
+	case proto.IncidentBlocked:
+		return proto.CatGuard
 	}
 	return proto.CatVPN
 }
@@ -186,11 +204,11 @@ func (m *Manager) Observe(now time.Time, in Input) Output {
 	if in.Hint == health.HintNone {
 		in.Hint = in.Diag.Hint
 	}
-	switch v := in.Diag.Verdict; {
-	case trouble(v):
+	switch kind := kindOf(in); {
+	case trouble(kind):
 		m.okAt = time.Time{}
 		m.troubled(now, in, &out)
-	case v == proto.VerdictOK:
+	case kind == proto.VerdictOK:
 		if m.cur == nil {
 			break
 		}
@@ -217,15 +235,16 @@ func (m *Manager) Observe(now time.Time, in Input) Output {
 }
 
 func (m *Manager) troubled(now time.Time, in Input, out *Output) {
-	kind := in.Diag.Verdict
+	kind := kindOf(in)
 	if m.cur != nil {
 		m.update(now, in, out)
 		return
 	}
 	// What the user set off themselves is not an incident - unless it is
-	// still there when the window closes. Two things do not wait: an engine
-	// that will not start, and a switch the daemon has already made.
-	if now.Before(m.graceUntil) && kind != proto.VerdictEngineFailed && in.Moved == nil {
+	// still there when the window closes. Three things do not wait: an engine
+	// that will not start, an internet the kill switch has kept closed (it
+	// has waited its own time already), and a switch the daemon has made.
+	if now.Before(m.graceUntil) && kind != proto.VerdictEngineFailed && kind != proto.IncidentBlocked && in.Moved == nil {
 		return
 	}
 	if e := m.last; e != nil && e.kind == kind && now.Sub(e.closed) <= m.t.ReopenWithin {
@@ -274,7 +293,7 @@ func (m *Manager) reopen(now time.Time, in Input, out *Output) {
 // change, a hint may turn up, another server may be the dead one now.
 func (m *Manager) update(now time.Time, in Input, out *Output) {
 	e := m.cur
-	kind := in.Diag.Verdict
+	kind := kindOf(in)
 	if e.calm {
 		// It had come good and fell again without ever closing.
 		e.calm = false

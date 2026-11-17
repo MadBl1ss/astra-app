@@ -62,9 +62,13 @@ func TestInterruptStopsTheEngineAndExitsCleanly(t *testing.T) {
 	}
 	pipe := fmt.Sprintf("strelka-test-main-%d", os.Getpid())
 
+	// --no-guard: this daemon switches the VPN on for real, and in an
+	// administrator's console a real kill switch would close the machine's
+	// internet for the length of the test.
+
 	daemon := exec.Command(self)
 	daemon.Env = append(os.Environ(),
-		envDaemonArgs+"="+strings.Join([]string{"run", "--data", paths.Data, "--engines", paths.Engines, "--pipe", pipe}, "\x1f"),
+		envDaemonArgs+"="+strings.Join([]string{"run", "--data", paths.Data, "--engines", paths.Engines, "--pipe", pipe, "--no-guard"}, "\x1f"),
 		enginetest.EnvDir+"="+paths.Data, // inherited by the engine
 	)
 	var out bytes.Buffer

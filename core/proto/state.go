@@ -247,9 +247,13 @@ const (
 	IncidentAllServersDown = VerdictAllServersDown
 	IncidentEngineFailed   = VerdictEngineFailed
 	IncidentHelperDown     = VerdictHelperDown
-	IncidentSubExpiring    = "sub_expiring" // the subscription ends within three days
-	IncidentSubExpired     = "sub_expired"
-	IncidentSubTraffic     = "sub_traffic" // the traffic allowance is used up
+	// IncidentBlocked: the kill switch has kept the internet closed for a
+	// while and the engine is still not back. It is not a verdict - the
+	// engine is restarting, which by itself is no trouble.
+	IncidentBlocked     = "blocked"
+	IncidentSubExpiring = "sub_expiring" // the subscription ends within three days
+	IncidentSubExpired  = "sub_expired"
+	IncidentSubTraffic  = "sub_traffic" // the traffic allowance is used up
 )
 
 // Severities of incidents and toasts.
