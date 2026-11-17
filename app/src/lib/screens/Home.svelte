@@ -10,7 +10,7 @@
   import Select, { type SelectItem } from '../components/Select.svelte';
   import Switch from '../components/Switch.svelte';
   import { clock, speed } from '../format';
-  import { countryPlace, homePlace } from '../globe/places';
+  import { countryPlace, homePlace, type Place } from '../globe/places';
   import { ru } from '../i18n/ru';
   import type { Mode, Server, State } from '../proto';
   import { win } from '../shell/window.svelte';
@@ -38,9 +38,15 @@
   const guard = $derived(guardLook(s));
   const recent = $derived(daemon.journal.slice(0, 3));
 
-  // The two ends of the beam on the globe. The near one is the city of the
-  // system's time zone: it does not change while the window is open.
-  const here = homePlace(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date().getTimezoneOffset());
+  // The two ends of the beam on the globe. The near one is what the daemon
+  // found by IP or the user chose; until then, the city of the system's
+  // time zone.
+  const guessed = homePlace(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date().getTimezoneOffset());
+  // Through two numbers, so that a new State with the same place does not
+  // hand the globe a new array.
+  const hereLat = $derived(s.place?.lat ?? guessed[0]);
+  const hereLon = $derived(s.place?.lon ?? guessed[1]);
+  const here = $derived<Place>([hereLat, hereLon]);
   const there = $derived(server ? countryPlace(countryOf(server)) : null);
 
   // Speeds by path come from the list of connections, which is only worth

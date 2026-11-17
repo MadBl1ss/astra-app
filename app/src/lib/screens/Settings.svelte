@@ -4,15 +4,17 @@
   import Button from '../components/Button.svelte';
   import Field from '../components/Field.svelte';
   import Segments from '../components/Segments.svelte';
+  import Select, { type SelectItem } from '../components/Select.svelte';
   import SettingRow from '../components/SettingRow.svelte';
   import Switch from '../components/Switch.svelte';
+  import { CITIES, cityOf } from '../globe/cities';
   import { ru } from '../i18n/ru';
   import type { EngineVersion, Settings, State } from '../proto';
   import { fileName, report } from '../report.svelte';
   import { daemon } from '../store.svelte';
   import { theme, type ThemeChoice } from '../theme.svelte';
   import { inWindow } from '../transport';
-  import { guardLook } from '../view';
+  import { flagOfCode, guardLook } from '../view';
 
   let { state: s }: { state: State } = $props();
 
@@ -138,6 +140,39 @@
     { value: '12h', label: t.autoUpdate12 },
     { value: '24h', label: t.autoUpdate24 },
   ] as const;
+
+  // ---- the near end of the globe's beam ----
+
+  const cityItems: SelectItem[] = CITIES.map((c) => ({ value: c.id, label: c.name, flag: flagOfCode(c.country) }));
+  const chosenCity = $derived(s.place?.source === 'manual' ? (cityOf(s.place)?.id ?? null) : null);
+  const placeNote = $derived(
+    !s.place ? t.placeNone : s.place.source === 'manual' ? t.placeManual(s.place.city) : t.placeIp(s.place.city),
+  );
+  let placeBusy = $state(false);
+  let placeError = $state<string | null>(null);
+
+  async function pickCity(id: string): Promise<void> {
+    const c = CITIES.find((x) => x.id === id);
+    if (!c) return;
+    placeError = null;
+    try {
+      await daemon.call('place.set', { lat: c.lat, lon: c.lon, city: c.name, country: c.country });
+    } catch (err) {
+      placeError = (err as Error).message;
+    }
+  }
+
+  async function detectPlace(): Promise<void> {
+    placeBusy = true;
+    placeError = null;
+    try {
+      await daemon.call('place.detect');
+    } catch (err) {
+      placeError = (err as Error).message;
+    } finally {
+      placeBusy = false;
+    }
+  }
 
   const guard = $derived(guardLook(s));
   const restartable = $derived(s.vpn.phase === 'on' || s.vpn.phase === 'recovering' || s.vpn.phase === 'failed');
@@ -287,6 +322,14 @@
           </div>
         {/snippet}
       </SettingRow>
+      <SettingRow label={t.place} note={placeNote} error={placeError}>
+        {#snippet children()}
+          <div class="place">
+            <Select items={cityItems} value={chosenCity} label={t.place} placeholder={t.placePick} onchange={pickCity} />
+          </div>
+          <Button icon="globe" busy={placeBusy} title={t.placeDetectHint} onclick={detectPlace}>{t.placeDetect}</Button>
+        {/snippet}
+      </SettingRow>
     </div>
   </section>
 
@@ -360,6 +403,10 @@
 
   .seg4 {
     width: 360px;
+  }
+
+  .place {
+    width: 220px;
   }
 
   @media (max-width: 900px) {

@@ -10,6 +10,7 @@ import {
   type Methods,
   type NotificationName,
   type Notifications,
+  type Place,
   type RuleKind,
   type RuleListName,
   type Rules,
@@ -139,6 +140,8 @@ export class MockTransport implements Transport {
     this.#vpnRate = t.down > 0 ? { up: t.up, down: t.down } : { up: 18_234, down: 912_340 };
     this.#seedJournal(scenario === MANY);
     this.#seedConns();
+    // Like the daemon on its first run: the place is asked for at once.
+    if (state.place === null && this.#reachable) setTimeout(() => this.#located(), 1500);
     setTimeout(() => this.#setStatus(this.#reachable ? 'connected' : 'disconnected'), 120);
     setInterval(() => this.#tick(), 1000);
   }
@@ -295,9 +298,32 @@ export class MockTransport implements Transport {
             { name: 'xray', version: '26.3.27' },
           ],
         }));
+      case 'place.detect':
+        return this.#soon(700, () => this.#located());
+      case 'place.set': {
+        const lat = p.lat as number;
+        const lon = p.lon as number;
+        const city = String(p.city ?? '').trim();
+        if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) || city === '') {
+          throw new RpcError(ErrorCode.invalidParams, text.placeBad);
+        }
+        s.place = { lat, lon, city, country: (p.country as string | undefined) ?? null, source: 'manual', at: now() };
+        this.#log('system', 'info', text.placeChosen);
+        this.#touch();
+        return {};
+      }
       default:
         throw new RpcError(ErrorCode.methodNotFound, text.unknownMethod);
     }
+  }
+
+  /** What the daemon gets from the geo service; the mock always "lives" in Moscow. */
+  #located(): Place {
+    const place: Place = { lat: 55.7558, lon: 37.6173, city: 'Москва', country: 'RU', source: 'ip', at: now() };
+    this.#state.place = place;
+    this.#log('system', 'info', text.placeDetected);
+    this.#touch();
+    return structuredClone(place);
   }
 
   #start(): void {

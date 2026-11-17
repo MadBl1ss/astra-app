@@ -255,7 +255,11 @@ export function countryOf(server: Server): string | null {
 
 /** The flag emoji of a server's country, or null when it is not known. */
 export function flagOf(server: Server): string | null {
-  const code = countryOf(server);
+  return flagOfCode(countryOf(server));
+}
+
+/** The flag emoji of a two-letter country code. */
+export function flagOfCode(code: string | null): string | null {
   if (!code || !/^[A-Z]{2}$/.test(code)) return null;
   return [...code].map((ch) => String.fromCodePoint(0x1f1e6 + ch.charCodeAt(0) - 65)).join('');
 }
