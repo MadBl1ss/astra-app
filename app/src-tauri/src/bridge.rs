@@ -188,6 +188,10 @@ async fn connect(address: &str) -> std::io::Result<tokio::net::windows::named_pi
     let mut tries = 0;
     loop {
         match ClientOptions::new().open(address) {
+            Ok(client) if installed_channel() => {
+                server_is_a_service(&client)?;
+                return Ok(client);
+            }
             Ok(client) => return Ok(client),
             Err(err) if err.raw_os_error() == Some(ERROR_PIPE_BUSY) && tries < BUSY_TRIES => {
                 tries += 1;
@@ -196,6 +200,36 @@ async fn connect(address: &str) -> std::io::Result<tokio::net::windows::named_pi
             Err(err) => return Err(err),
         }
     }
+}
+
+/// Whether this is the installed service's channel: a release build with no
+/// override. Only that one is checked for who is on the other end - a
+/// developer's `strelkad run` is a process of their own.
+#[cfg(windows)]
+fn installed_channel() -> bool {
+    !cfg!(debug_assertions) && std::env::var(ENV_CHANNEL).map_or(true, |name| name.is_empty())
+}
+
+/// Anyone logged on may create an instance of the pipe (the right to write
+/// to it includes that), and while the real service is stopped - during an
+/// update - a program could take the name and pose as it. Comparing the
+/// server's path is out of reach: a user may not open a process of SYSTEM.
+/// Its session is not: services live in session 0, and no user's program
+/// can run there.
+#[cfg(windows)]
+fn server_is_a_service(client: &tokio::net::windows::named_pipe::NamedPipeClient) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Pipes::GetNamedPipeServerSessionId;
+
+    let mut session = u32::MAX;
+    unsafe { GetNamedPipeServerSessionId(HANDLE(client.as_raw_handle()), &mut session) }
+        .map_err(|err| std::io::Error::other(format!("pipe server session: {err}")))?;
+    if session != 0 {
+        eprintln!("bridge: the channel is served from session {session}, not by the service; not connecting");
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "not the service"));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

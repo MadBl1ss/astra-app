@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["net", "io-util", "sync", "time", "macros"]
 # The toast window is shown without taking the focus, which Tauri cannot do
 # by itself; the same version as Tauri's own, so it is built once.
 [target."cfg(windows)".dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Pipes", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 
 [profile.release]
 codegen-units = 1
