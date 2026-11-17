@@ -118,6 +118,17 @@
     border-top: 1px solid var(--line);
   }
 
+  /* The smallest window: six steps and the buttons fit without scrolling. */
+  @media (max-height: 620px) {
+    .lead {
+      margin-bottom: var(--s2);
+    }
+
+    li {
+      padding-block: 6px;
+    }
+  }
+
   .ico {
     display: grid;
     place-items: center;

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "node --test src/lib/*.test.ts",
+    "contrast": "node scripts/contrast.mjs",
     "icons": "node scripts/icons.mjs",
     "globe": "node scripts/globe.mjs",
     "tauri": "tauri"
