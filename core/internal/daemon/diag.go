@@ -229,7 +229,9 @@ func buildReport(in reportInput, now time.Time) (string, error) {
 	}
 	add("journal.jsonl", journal)
 
-	for _, name := range []string{boxName, xrayName} {
+	// strelkad.log is the installed service's own log (cmd/strelkad); in a
+	// console run there is none and the entry is simply empty.
+	for _, name := range []string{boxName, xrayName, "strelkad"} {
 		for _, path := range []string{in.paths.EngineLog(name) + ".1", in.paths.EngineLog(name)} {
 			data, err := diag.Tail(path, tailBytes)
 			if err != nil {
