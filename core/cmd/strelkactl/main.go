@@ -63,7 +63,9 @@ func usage() {
   rules apps             запущенные программы, которые можно добавить в правила
   set [ИМЯ=ЗНАЧЕНИЕ…]    настройки службы; без параметров — показать
   import-legacy ПАПКА    перенести подписки, правила и выбор из старой Стрелки
-  versions               версии службы и движков
+  find-legacy            найти папку старой Стрелки: задача планировщика, запущенный трей
+  check                  проверить соединение по шагам: сеть, интернет, DNS, VPN, сервер, сайт
+  versions              версии службы и движков
   report                 собрать отчёт для поддержки (архив логов без ключей)
   place                  где компьютер — для глобуса в окне
   place detect           определить по IP сейчас и вернуться к автоматическому
@@ -96,7 +98,7 @@ func realMain(args []string) int {
 	switch cmd {
 	case "status", "start", "stop", "restart", "watch", "call",
 		"subs", "servers", "conns", "select", "test", "mode", "rules", "set", "import-legacy",
-		"journal", "action", "versions", "report", "guard", "place":
+		"journal", "action", "versions", "report", "guard", "place", "check", "find-legacy":
 	case "help":
 		usage()
 		return 0
@@ -169,6 +171,10 @@ func realMain(args []string) int {
 		err = guardCmd(ctx, c)
 	case "place":
 		err = placeCmd(ctx, c, rest)
+	case "check":
+		err = checkCmd(ctx, c)
+	case "find-legacy":
+		err = findLegacyCmd(ctx, c)
 	}
 	if err != nil {
 		return fail(err)

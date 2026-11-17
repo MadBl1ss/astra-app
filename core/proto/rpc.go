@@ -26,12 +26,13 @@ const (
 	TopicConnections = "connections"
 	TopicToast       = "toast"
 	TopicLog         = "log"
+	TopicDiag        = "diag"
 )
 
 // KnownTopic reports whether a client may subscribe to topic.
 func KnownTopic(topic string) bool {
 	switch topic {
-	case TopicState, TopicJournal, TopicTraffic, TopicConnections, TopicToast, TopicLog:
+	case TopicState, TopicJournal, TopicTraffic, TopicConnections, TopicToast, TopicLog, TopicDiag:
 		return true
 	}
 	return false
@@ -388,4 +389,49 @@ type PlaceSetParams struct {
 // DiagExportResult is where the report archive was written.
 type DiagExportResult struct {
 	Path string `json:"path"`
+}
+
+// Methods added with notifications and the first run.
+const (
+	MethodDiagRun      = "diag.run"
+	MethodLegacyDetect = "legacy.detect"
+)
+
+// Steps of diag.run, in the order they are taken.
+const (
+	DiagNetwork  = "network"
+	DiagInternet = "internet"
+	DiagDNS      = "dns"
+	DiagEngine   = "engine"
+	DiagServer   = "server"
+	DiagSite     = "site"
+)
+
+// Values of DiagStep.status.
+const (
+	DiagRunning = "running"
+	DiagOK      = "ok"
+	DiagFail    = "fail"
+	DiagSkip    = "skip"
+)
+
+// DiagStep is one step of a connection check, both in the "diag"
+// notification and in the answer to diag.run.
+type DiagStep struct {
+	Step   string  `json:"step"`
+	Status string  `json:"status"`
+	Text   string  `json:"text"`
+	Advice *string `json:"advice"`
+}
+
+type DiagRunResult struct {
+	Steps []DiagStep `json:"steps"`
+}
+
+// LegacyDetectResult names the folder of an old Strelka; nil when none was
+// found. Running: its program runs right now - a VPN of its own, which the
+// new one must not be started next to.
+type LegacyDetectResult struct {
+	Dir     *string `json:"dir"`
+	Running bool    `json:"running"`
 }

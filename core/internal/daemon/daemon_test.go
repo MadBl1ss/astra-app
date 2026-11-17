@@ -571,7 +571,6 @@ func TestErrorsAreCodedAndWorded(t *testing.T) {
 			t.Errorf("%s: текст ошибки должен быть русским: %q", method, perr.Message)
 		}
 	}
-	check("diag.run", nil, proto.CodeMethodNotFound) // a later stage
 	check(proto.MethodModeSet, map[string]string{"mode": "всё"}, proto.CodeInvalidParams)
 	check(proto.MethodModeSet, nil, proto.CodeInvalidParams)
 	check(proto.MethodServerSelect, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)

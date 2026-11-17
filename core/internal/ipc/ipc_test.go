@@ -23,6 +23,19 @@ func testName() string {
 	return fmt.Sprintf("strelka-test-ipc-%d-%d", os.Getpid(), pipeSeq.Add(1))
 }
 
+// answerNow makes a handler of a function that answers in place. "slow"
+// sleeps in the wait, as the daemon's waiting for its loop does, and the
+// rest answer at once; subscriptions happen in the read loop, in order.
+func answerNow(f func(c *Conn, method string, params json.RawMessage) (any, *proto.Error)) Handler {
+	return func(c *Conn, method string, params json.RawMessage) func() (any, *proto.Error) {
+		if method == "slow" {
+			return func() (any, *proto.Error) { return f(c, method, params) }
+		}
+		result, err := f(c, method, params)
+		return func() (any, *proto.Error) { return result, err }
+	}
+}
+
 // startServer runs a server with a small test protocol: echo, subscribe, fail.
 func startServer(t *testing.T) (*Server, string) {
 	t.Helper()
@@ -31,12 +44,15 @@ func startServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatalf("канал не открылся: %v", err)
 	}
-	srv := NewServer(func(c *Conn, method string, params json.RawMessage) (any, *proto.Error) {
+	srv := NewServer(answerNow(func(c *Conn, method string, params json.RawMessage) (any, *proto.Error) {
 		switch method {
 		case "echo":
 			return params, nil
 		case "empty":
 			return nil, nil
+		case "slow":
+			time.Sleep(300 * time.Millisecond)
+			return "slow", nil
 		case "subscribe":
 			var p proto.TopicsParams
 			if err := json.Unmarshal(params, &p); err != nil {
@@ -51,7 +67,7 @@ func startServer(t *testing.T) (*Server, string) {
 			return nil, nil
 		}
 		return nil, proto.Errorf(proto.CodeMethodNotFound, "Неизвестный метод %s.", method)
-	})
+	}))
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(l) }()
 	t.Cleanup(func() {
@@ -106,6 +122,31 @@ func TestRequestAndResponse(t *testing.T) {
 	}
 	if !strings.Contains(perr.Message, "nope") {
 		t.Errorf("текст ошибки: %q", perr.Message)
+	}
+}
+
+// A slow answer does not hold up a quick request sent after it on the same
+// connection: the window has one connection, and a connection check that
+// takes half a minute must not freeze its switch.
+func TestSlowRequestDoesNotHoldUpTheNext(t *testing.T) {
+	_, name := startServer(t)
+	c := dialTest(t, name)
+	slow := make(chan error, 1)
+	go func() {
+		var s string
+		slow <- c.Call(ctx5(t), "slow", nil, &s)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	start := time.Now()
+	var got string
+	if err := c.Call(ctx5(t), "echo", "быстро", &got); err != nil || got != "быстро" {
+		t.Fatalf("echo: %q, %v", got, err)
+	}
+	if took := time.Since(start); took > 200*time.Millisecond {
+		t.Errorf("быстрый запрос ждал медленный: %v", took)
+	}
+	if err := <-slow; err != nil {
+		t.Errorf("медленный: %v", err)
 	}
 }
 
@@ -263,9 +304,11 @@ func TestCallFailsWhenServerGoesAway(t *testing.T) {
 		t.Fatal(err)
 	}
 	block := make(chan struct{})
-	srv := NewServer(func(*Conn, string, json.RawMessage) (any, *proto.Error) {
-		<-block
-		return nil, nil
+	srv := NewServer(func(*Conn, string, json.RawMessage) func() (any, *proto.Error) {
+		return func() (any, *proto.Error) {
+			<-block
+			return nil, nil
+		}
 	})
 	go srv.Serve(l)
 	c := dialTest(t, name)

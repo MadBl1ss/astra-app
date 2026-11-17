@@ -67,10 +67,13 @@
   --line: #dfe2e8;
   --text: #14171c;
   --muted: #5d6675;
-  --vpn: #0f9d63;
-  --direct: #6b7890;
-  --warn: #b97a09;
-  --bad: #d23b41;
+  /* Darker than the dark theme's: on white these colours are also text (a
+     ping, "не работает") and keep 4.5:1, see pnpm contrast. The globe keeps
+     its brighter pairs below: it is a picture, not text. */
+  --vpn: #0b7a4b;
+  --direct: #5a667c;
+  --warn: #8f5d00;
+  --bad: #be2f37;
 
   --globe-ok-a: #0f9d63;
   --globe-ok-b: #0b7fc9;

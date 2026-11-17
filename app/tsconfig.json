@@ -16,5 +16,7 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"],
+  // Tests run under Node (pnpm test), which strips the types itself.
+  "exclude": ["src/**/*.test.ts"]
 }

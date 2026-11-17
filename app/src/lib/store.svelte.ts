@@ -3,12 +3,14 @@ import { ru } from './i18n/ru';
 import {
   PROTO,
   type Connection,
+  type DiagStep,
   type IncidentAction,
   type JournalEntry,
   type MethodName,
   type Methods,
   type Mode,
   type State,
+  type Toast,
 } from './proto';
 import { RpcError, type LinkStatus, type Transport } from './transport';
 
@@ -54,6 +56,8 @@ class Daemon {
   #watchers = 0;
   #seen: Map<string, { up: number; down: number }> | null = null;
   #seenAt = 0;
+  #toast: ((t: Toast) => void) | null = null;
+  #diag = new Set<(step: DiagStep) => void>();
 
   attach(transport: Transport): void {
     this.#transport = transport;
@@ -64,6 +68,8 @@ class Daemon {
       this.journal = [entry, ...this.journal.filter((e) => e.id !== entry.id)].slice(0, JOURNAL_KEEP);
     });
     transport.on('connections', (list) => this.#measure(list));
+    transport.on('toast', (t) => this.#toast?.(t));
+    transport.on('diag', (step) => this.#diag.forEach((fn) => fn(step)));
     transport.onStatus((status) => this.#onLink(status));
     this.#onLink(transport.status());
 
@@ -72,6 +78,11 @@ class Daemon {
         this.now = Date.now();
       }, 1000);
     }
+  }
+
+  /** Who shows the daemon's toasts; one listener, set at start. */
+  onToast(handler: (t: Toast) => void): void {
+    this.#toast = handler;
   }
 
   /** The daemon is reachable, speaks our protocol and has sent its state. */
@@ -95,9 +106,13 @@ class Daemon {
         return;
       }
       this.outdated = null;
-      // Subscribing to "state" delivers the current document right away.
-      await transport.call('state.subscribe', { topics: ['state', 'journal'] });
+      // Subscribing to "state" delivers the current document right away,
+      // and to "toast" the toasts that waited for somebody to show them.
+      // This page is the only one that listens to toasts: the daemon gives
+      // a waiting one to the first listener only.
+      await transport.call('state.subscribe', { topics: ['state', 'journal', 'toast'] });
       if (this.#watchers > 0) await transport.call('state.subscribe', { topics: ['connections'] });
+      if (this.#diag.size > 0) await transport.call('state.subscribe', { topics: ['diag'] });
       const page = await transport.call('journal.list', { limit: JOURNAL_KEEP });
       const known = new Set(page.entries.map((e) => e.id));
       this.journal = [...this.journal.filter((e) => !known.has(e.id)), ...page.entries]
@@ -200,6 +215,24 @@ class Daemon {
       this.#forgetRates();
       if (this.link === 'connected') {
         void this.#transport?.call('state.unsubscribe', { topics: ['connections'] }).catch(() => {});
+      }
+    };
+  }
+
+  /**
+   * Hears the steps of a connection check as they go, while somebody shows
+   * them. The answer of diag.run has them all as well; this is for the
+   * "проверяю…" in between.
+   */
+  watchDiag(handler: (step: DiagStep) => void): () => void {
+    this.#diag.add(handler);
+    if (this.#diag.size === 1 && this.link === 'connected') {
+      void this.#transport?.call('state.subscribe', { topics: ['diag'] }).catch(() => {});
+    }
+    return () => {
+      if (!this.#diag.delete(handler) || this.#diag.size > 0) return;
+      if (this.link === 'connected') {
+        void this.#transport?.call('state.unsubscribe', { topics: ['diag'] }).catch(() => {});
       }
     };
   }

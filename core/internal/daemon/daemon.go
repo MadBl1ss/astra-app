@@ -91,6 +91,13 @@ type Options struct {
 	// cmd/strelkad asks a service on the internet, a test never does.
 	Locator *geo.Locator
 
+	// Fetch and Lookup are how the connection check (diag.run) reaches the
+	// internet by itself, when the engine is not there to ask: an HTTP GET
+	// past any proxy, and a name lookup through the system. Nil means the
+	// real ones; tests put stand-ins here so as not to touch the network.
+	Fetch  func(ctx context.Context, url string) error
+	Lookup func(ctx context.Context, host string) error
+
 	// Logf receives the daemon's own diagnostics (English, for the console).
 	Logf func(format string, a ...any)
 }
@@ -184,6 +191,8 @@ type Daemon struct {
 
 	gs guardState // the kill switch, see guard.go
 	ps placeState // where the computer is, see place.go
+
+	diagBusy bool // a diag.run is under way, see diagrun.go
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.
@@ -424,21 +433,26 @@ func (d *Daemon) shutdown() {
 	d.publish()
 }
 
-// handle is the ipc handler. It runs in a connection's goroutine and only
-// hands the call to the loop.
-func (d *Daemon) handle(c *ipc.Conn, method string, params json.RawMessage) (any, *proto.Error) {
+// handle is the ipc handler. It runs in a connection's read loop and only
+// hands the call to the loop, so calls reach the loop in the order they
+// were sent; the answer is waited for outside the read loop.
+func (d *Daemon) handle(c *ipc.Conn, method string, params json.RawMessage) func() (any, *proto.Error) {
 	call := rpcCall{conn: c, method: method, params: params, reply: make(chan rpcReply, 1)}
-	gone := proto.Errorf(proto.CodeBusy, "Служба завершает работу.")
+	gone := func() (any, *proto.Error) {
+		return nil, proto.Errorf(proto.CodeBusy, "Служба завершает работу.")
+	}
 	select {
 	case d.inbox <- call:
 	case <-d.done:
-		return nil, gone
+		return gone
 	}
-	select {
-	case r := <-call.reply:
-		return r.result, r.err
-	case <-d.done:
-		return nil, gone
+	return func() (any, *proto.Error) {
+		select {
+		case r := <-call.reply:
+			return r.result, r.err
+		case <-d.done:
+			return gone()
+		}
 	}
 }
 
@@ -474,6 +488,10 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		return d.placeDetect(c)
 	case proto.MethodPlaceSet:
 		result, err = d.placeSet(c)
+	case proto.MethodDiagRun:
+		return d.diagRun(c)
+	case proto.MethodLegacyDetect:
+		return d.legacyDetect(c)
 	default:
 		return d.dispatchProfile(c)
 	}

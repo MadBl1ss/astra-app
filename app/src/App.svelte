@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from './lib/components/Icon.svelte';
   import { ru } from './lib/i18n/ru';
+  import FirstRun from './lib/screens/FirstRun.svelte';
   import Home from './lib/screens/Home.svelte';
   import Journal from './lib/screens/Journal.svelte';
   import NoDaemon from './lib/screens/NoDaemon.svelte';
@@ -8,10 +9,20 @@
   import Servers from './lib/screens/Servers.svelte';
   import Settings from './lib/screens/Settings.svelte';
   import Nav, { SECTIONS, type Section } from './lib/shell/Nav.svelte';
+  import ToastLayer from './lib/shell/ToastLayer.svelte';
   import Titlebar from './lib/shell/Titlebar.svelte';
   import { daemon } from './lib/store.svelte';
 
   let section = $state<Section>('home');
+
+  // An empty profile at start is a first run: one field instead of the
+  // whole window. Decided once, from the first State: deleting the last
+  // subscription later must not throw the user out of the screen they are on.
+  let firstRun = $state<boolean | null>(null);
+  $effect(() => {
+    const s = daemon.state;
+    if (firstRun === null && s) firstRun = s.servers.length === 0 && s.subs.length === 0;
+  });
 
   // Ctrl+1…5 open the sections in the order of the column. A dialog that is
   // open keeps the keys to itself: its page must not change under it.
@@ -45,6 +56,13 @@
 
   {#if daemon.outdated || lost}
     <NoDaemon />
+  {:else if daemon.state && firstRun}
+    <FirstRun
+      ondone={() => {
+        firstRun = false;
+        section = 'home';
+      }}
+    />
   {:else if daemon.state}
     <div class="body">
       <Nav {section} onselect={(next) => (section = next)} />
@@ -76,6 +94,8 @@
     </div>
   {/if}
 </div>
+
+<ToastLayer />
 
 <style>
   .window {

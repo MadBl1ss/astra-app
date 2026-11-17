@@ -184,7 +184,27 @@ export interface Connection {
   started: string;
 }
 
-export type Topic = 'state' | 'journal' | 'traffic' | 'connections' | 'toast' | 'log';
+export type Topic = 'state' | 'journal' | 'traffic' | 'connections' | 'toast' | 'log' | 'diag';
+
+export type DiagStepName = 'network' | 'internet' | 'dns' | 'engine' | 'server' | 'site';
+
+/** One step of the connection check, as it goes and as it ended. */
+export interface DiagStep {
+  step: DiagStepName;
+  status: 'running' | 'ok' | 'fail' | 'skip';
+  text: string;
+  advice: string | null;
+}
+
+export interface LegacyImportResult {
+  subs: number;
+  servers: number;
+  rules: number;
+  selected: string | null;
+  mode: Mode;
+  /** Names of subscriptions that did not download. */
+  failed: string[];
+}
 
 export type RuleListName = 'vpn' | 'direct';
 export type RuleKind = 'process' | 'suffix' | 'domain' | 'keyword' | 'ip';
@@ -279,6 +299,10 @@ export interface Methods {
   'engine.versions': { params: undefined; result: { engines: EngineVersion[] } };
   'place.detect': { params: undefined; result: Place };
   'place.set': { params: { lat: number; lon: number; city: string; country?: string }; result: Empty };
+  'diag.run': { params: undefined; result: { steps: DiagStep[] } };
+  /** running: the old Strelka's own VPN is up; do not start a second one next to it. */
+  'legacy.detect': { params: undefined; result: { dir: string | null; running: boolean } };
+  'legacy.import': { params: { dir: string }; result: LegacyImportResult };
 }
 
 export type MethodName = keyof Methods;
@@ -291,6 +315,7 @@ export interface Notifications {
   connections: Connection[];
   toast: Toast;
   log: { t: string; source: 'sing-box' | 'xray' | 'strelkad'; level: string; line: string };
+  diag: DiagStep;
 }
 
 export type NotificationName = keyof Notifications;

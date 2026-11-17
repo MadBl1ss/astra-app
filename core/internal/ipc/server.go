@@ -31,10 +31,17 @@ const (
 	sendQueue = 64
 )
 
-// Handler answers one request. It returns either a result (nil means {}) or
-// an error with a user-facing text. It is called from the connection's read
-// loop, one request at a time per connection.
-type Handler func(c *Conn, method string, params json.RawMessage) (any, *proto.Error)
+// Handler takes one request and returns how to wait for its answer: either
+// a result (nil means {}) or an error with a user-facing text. It is called
+// from the connection's read loop, one request at a time and in the order
+// they came, so it should only hand the request on. The waiting happens in
+// a goroutine of its own: a slow request (a connection check, a download)
+// must not hold up a quick one sent after it on the same connection.
+type Handler func(c *Conn, method string, params json.RawMessage) (wait func() (any, *proto.Error))
+
+// maxInFlight bounds the requests of one client that wait for answers at
+// once. A client that sends more is not read from until some are answered.
+const maxInFlight = 32
 
 // Server accepts connections and fans notifications out to subscribers.
 type Server struct {
@@ -264,6 +271,7 @@ func (c *Conn) readLoop() {
 	defer c.Close()
 	sc := bufio.NewScanner(c.nc)
 	sc.Buffer(make([]byte, 0, 4096), maxRequestLine)
+	slots := make(chan struct{}, maxInFlight)
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -282,11 +290,21 @@ func (c *Conn) readLoop() {
 			}
 			continue
 		}
-		result, rerr := c.srv.handler(c, req.Method, req.Params)
-		if len(req.ID) == 0 {
-			continue // a notification gets no answer, even on error
+		select {
+		case slots <- struct{}{}:
+		case <-c.done:
+			return
 		}
-		c.reply(req.ID, result, rerr)
+		wait := c.srv.handler(c, req.Method, req.Params)
+		id := req.ID
+		go func() {
+			defer func() { <-slots }()
+			result, rerr := wait()
+			if len(id) == 0 {
+				return // a notification gets no answer, even on error
+			}
+			c.reply(id, result, rerr)
+		}()
 	}
 }
 

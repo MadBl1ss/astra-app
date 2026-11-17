@@ -144,9 +144,14 @@ func (fc *fakeClash) register(mux *http.ServeMux, secret string) {
 	})
 	handle("GET /proxies/{tag}/delay", func(w http.ResponseWriter, r *http.Request) {
 		tag := r.PathValue("tag")
+		// The selector answers for the server it points at, unless a test
+		// scripted it on its own: a site that fails behind a live server.
+		if tag == "proxy" && len(fc.scripts["proxy"]) == 0 {
+			tag = fc.now
+		}
 		// "direct" is an outbound like any other: the daemon tests it to
 		// learn whether there is internet past the VPN.
-		if !fc.member(tag) && tag != "direct" {
+		if !fc.member(tag) && tag != "direct" && tag != "proxy" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
