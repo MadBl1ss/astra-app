@@ -19,7 +19,14 @@ pub struct Native(pub bool);
 /// Makes the window, hidden. Its failure is not the app's: the page falls
 /// back to the system's notifications.
 pub fn build(app: &AppHandle) -> bool {
-    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?window=toasts".into()))
+    let mut builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?window=toasts".into()));
+    // Both windows live in one WebView2 browser process, which refuses a
+    // second webview asking for other browser arguments than the first.
+    let main = app.config().app.windows.iter().find(|w| w.label == "main");
+    if let Some(args) = main.and_then(|w| w.additional_browser_args.as_deref()) {
+        builder = builder.additional_browser_args(args);
+    }
+    let built = builder
         .title("Strelka")
         .decorations(false)
         .transparent(true)
@@ -97,18 +104,19 @@ pub fn screen_busy() -> bool {
 #[cfg(windows)]
 fn no_activate(window: &WebviewWindow) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
     // focusable(false) already gives WS_EX_NOACTIVATE; TOOLWINDOW keeps the
-    // window out of Alt+Tab. Both are set here so that neither depends on
-    // how a future Tauri spells it.
+    // window out of Alt+Tab, which APPWINDOW (set by tao) would undo. Both
+    // are set here so that neither depends on how a future Tauri spells it.
     let Ok(hwnd) = window.hwnd() else {
         return;
     };
     // SAFETY: the handle belongs to a live window of this process.
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize);
+        let ex = (ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize) & !(WS_EX_APPWINDOW.0 as isize);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
     }
 }
 

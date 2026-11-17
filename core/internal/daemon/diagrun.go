@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 	"unicode"
 
@@ -197,7 +198,10 @@ func (d *Daemon) runDiag(ctx context.Context, in diagInput, report func(proto.Di
 				Advice: advice("Перезапусти VPN в Настройках. Если не поможет — выбери сервер без Xray.")}
 		}
 		text := "VPN работает"
-		if version != "" {
+		switch {
+		case strings.HasPrefix(version, "sing-box"): // the engine names itself
+			text += ", " + version
+		case version != "":
 			text += ", sing-box " + version
 		}
 		if in.xrayWanted {
