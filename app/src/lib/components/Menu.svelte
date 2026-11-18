@@ -13,6 +13,7 @@
 </script>
 
 <script lang="ts">
+  import { dismissOn, showBeside } from '../popup';
   import Icon from './Icon.svelte';
   import IconButton from './IconButton.svelte';
 
@@ -24,6 +25,7 @@
   let root: HTMLDivElement | undefined = $state();
   let trigger: HTMLButtonElement | undefined = $state();
   let list: HTMLUListElement | undefined = $state();
+  let up = $state(false);
 
   function buttons(): HTMLButtonElement[] {
     return [...(list?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
@@ -32,7 +34,7 @@
   function show(): void {
     open = true;
     // The list exists after this tick; the first action gets the focus.
-    queueMicrotask(() => requestAnimationFrame(() => buttons()[0]?.focus()));
+    queueMicrotask(() => requestAnimationFrame(() => buttons()[0]?.focus({ preventScroll: true })));
   }
 
   function hide(refocus: boolean): void {
@@ -75,12 +77,12 @@
   }
 
   $effect(() => {
+    if (open && list && trigger) up = showBeside(list, trigger, 'end');
+  });
+
+  $effect(() => {
     if (!open) return;
-    const away = (event: PointerEvent) => {
-      if (root && !root.contains(event.target as Node)) hide(false);
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => document.removeEventListener('pointerdown', away, true);
+    return dismissOn(() => [root], () => hide(false));
   });
 </script>
 
@@ -99,7 +101,7 @@
   />
   {#if open}
     <!-- svelte-ignore a11y_interactive_supports_focus -->
-    <ul {id} role="menu" aria-label={label} bind:this={list} {onkeydown}>
+    <ul {id} role="menu" popover="manual" class:up aria-label={label} bind:this={list} {onkeydown}>
       {#each items as item (item.label)}
         <li role="none">
           <button type="button" role="menuitem" class:danger={item.danger} disabled={item.disabled} onclick={() => pick(item)}>
@@ -130,13 +132,33 @@
     border-radius: var(--r-ctl);
     background: var(--surface);
     box-shadow: var(--shadow-pop);
+    color: var(--text);
     animation: pop var(--fast) ease-out;
+  }
+
+  /* In the top layer: placed by showBeside, over any box that clips. */
+  ul:popover-open {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    overflow: visible;
+  }
+
+  ul.up {
+    animation-name: pop-up;
   }
 
   @keyframes pop {
     from {
       opacity: 0;
       transform: translateY(-3px);
+    }
+  }
+
+  @keyframes pop-up {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
     }
   }
 
