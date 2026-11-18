@@ -1,0 +1,57 @@
+{
+  "proto": 1,
+  "version": "0.1.0",
+  "rev": 1,
+  "vpn": {
+    "desired": "off",
+    "phase": "off",
+    "since": null,
+    "mode": "rule",
+    "failReason": null,
+    "failText": null
+  },
+  "health": {
+    "verdict": "settling",
+    "since": null,
+    "hint": null,
+    "internet": true,
+    "network": true
+  },
+  "guard": {
+    "enabled": true,
+    "engaged": false,
+    "blocking": false,
+    "allowLan": true
+  },
+  "server": {
+    "selected": null,
+    "ping": null,
+    "pingAt": null
+  },
+  "servers": [],
+  "subs": [],
+  "traffic": {
+    "up": 0,
+    "down": 0,
+    "upTotal": 0,
+    "downTotal": 0
+  },
+  "conns": {
+    "total": 0,
+    "vpn": 0
+  },
+  "incidents": [],
+  "settings": {
+    "notify": "important",
+    "quietFullscreen": true,
+    "guard": true,
+    "allowLan": true,
+    "ipv6": "tunnel",
+    "failover": false,
+    "autoUpdateSubs": "12h",
+    "localProxyPort": 0,
+    "startOnBoot": true
+  },
+  "busy": null,
+  "place": null
+}
