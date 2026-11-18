@@ -12,6 +12,7 @@ mod bridge;
 mod legacy;
 mod toasts;
 mod tray;
+mod update;
 
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -37,9 +38,8 @@ fn main() {
         // The fallback for toasts when their own window is not wanted or
         // could not be made.
         .plugin(tauri_plugin_notification::init())
-        // New versions from GitHub releases; the page drives it
-        // (lib/update.svelte.ts), the key and the address are in
-        // tauri.conf.json.
+        // New versions from GitHub releases, through update.rs: the page
+        // never calls the plugin itself.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -59,10 +59,14 @@ fn main() {
             toasts::screen_busy,
             legacy::legacy_tray_autostart,
             legacy::legacy_tray_autostart_off,
+            update::update_check,
+            update::update_download,
+            update::update_install,
         ])
         .setup(move |app| {
             tray::build(app.handle())?;
             app.manage(bridge::start(app.handle().clone()));
+            app.manage(update::Pending::default());
             // Made here rather than in tauri.conf.json, where a failure
             // could not be caught: without it toasts go to the system.
             let native = toasts::build(app.handle());

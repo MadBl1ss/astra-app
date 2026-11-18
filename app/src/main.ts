@@ -44,8 +44,8 @@ if (new URLSearchParams(location.search).get('window') === 'toasts') {
     seedRestart(fakeUpdate, app.version);
     updates.attach(mockSource(fakeUpdate), true);
   } else if (inWindow && !import.meta.env.DEV) {
-    const { pluginSource } = await import('./lib/shell/updater');
-    updates.attach(pluginSource(), false);
+    const { shellSource } = await import('./lib/shell/updater');
+    updates.attach(shellSource(), false);
   }
 
   if (inWindow) {

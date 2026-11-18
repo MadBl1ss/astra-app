@@ -45,7 +45,7 @@
       </p>
 
       {#if u.phase === 'offer' || u.phase === 'error'}
-        <div class="notes" tabindex="-1">
+        <div class="notes">
           {#if notes.length === 0}
             <p class="muted">{t.notesEmpty}</p>
           {:else}
