@@ -1,5 +1,5 @@
 //! The old Strelka's tray icon starts at logon from the user's own Run key
-//! (`legacy/tray/sys_windows.go` of the old repository: value "sing-box
+//! (`tray/sys_windows.go` of the old repository, strelka-sing-box: value "sing-box
 //! tray"). The daemon runs as SYSTEM and sees its own HKCU, not the user's,
 //! so taking that entry off is the window's part of retiring the old
 //! Strelka; the daemon stops its programs and its scheduled task
