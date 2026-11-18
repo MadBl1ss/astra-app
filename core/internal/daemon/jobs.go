@@ -581,7 +581,7 @@ func checkTarget(set rules.Set, global bool, kind, value string, inAuto func(tag
 		return direct(fmt.Sprintf("В списке «напрямую»: %s %s.", kindTitle[rk], rule))
 	}
 	if global {
-		return vpn("Включён режим «весь трафик через VPN».")
+		return vpn("Включён режим «Весь трафик».")
 	}
 	if rk, rule, ok := rules.Match(set.VPN, kind, value); ok {
 		return vpn(fmt.Sprintf("В списке «через VPN»: %s %s.", kindTitle[rk], rule))

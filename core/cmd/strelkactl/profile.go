@@ -32,7 +32,7 @@ func getState(ctx context.Context, c *ipc.Client) (proto.State, error) {
 }
 
 var modeText = map[string]string{
-	proto.ModeRule:   "через VPN только список",
+	proto.ModeRule:   "смарт: через VPN только списки",
 	proto.ModeGlobal: "весь трафик через VPN",
 }
 

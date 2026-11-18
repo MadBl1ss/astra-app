@@ -70,7 +70,7 @@
       <Nav {section} onselect={(next) => (section = next)} />
       <main>
         {#if section === 'home'}
-          <Home state={daemon.state} onjournal={() => (section = 'journal')} />
+          <Home state={daemon.state} onjournal={() => (section = 'journal')} onrules={() => (section = 'rules')} />
         {:else if section === 'servers'}
           <Servers state={daemon.state} />
         {:else if section === 'rules'}

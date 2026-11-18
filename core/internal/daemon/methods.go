@@ -214,9 +214,9 @@ func (d *Daemon) modeSet(c rpcCall) (any, *proto.Error) {
 	d.saveProfile()
 	d.replan()
 	d.refresh()
-	text := "Режим: через VPN идёт только список."
+	text := "Режим «Смарт»: через VPN идут только списки."
 	if p.Mode == proto.ModeGlobal {
-		text = "Режим: весь трафик через VPN."
+		text = "Режим «Весь трафик»: через VPN идёт всё."
 	}
 	d.log(proto.CatVPN, proto.LevelInfo, text)
 	api, mode := d.api.Load(), confgen.ClashMode(p.Mode)

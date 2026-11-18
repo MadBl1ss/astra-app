@@ -226,8 +226,8 @@ func TestSubscriptionSelectModeAndRulesWithoutRestart(t *testing.T) {
 		t.Errorf("rules.check сайта из списка «напрямую»: %+v", where)
 	}
 	r.call(proto.MethodRulesCheck, proto.RulesCheckParams{Target: "whatever.example.net"}, &where)
-	if where.Route != "vpn" || !strings.Contains(where.Because, "весь трафик") {
-		t.Errorf("rules.check в режиме «весь трафик»: %+v", where)
+	if where.Route != "vpn" || !strings.Contains(where.Because, "Весь трафик") {
+		t.Errorf("rules.check в режиме «Весь трафик»: %+v", where)
 	}
 
 	r.call(proto.MethodRulesRemove, proto.RuleRef{List: "direct", Kind: ref.Kind, Value: ref.Value}, nil)
@@ -680,8 +680,8 @@ func TestCheckTarget(t *testing.T) {
 		{false, "203.0.113.7", "direct", "203.0.113.0/24"},
 		// "All traffic" sends the rest to the VPN, but the direct list and
 		// the local network still win.
-		{true, "notepad.exe", "vpn", "весь трафик"},
-		{true, "plain.example.net", "vpn", "весь трафик"},
+		{true, "notepad.exe", "vpn", "Весь трафик"},
+		{true, "plain.example.net", "vpn", "Весь трафик"},
 		{true, "steam.exe", "direct", "напрямую"},
 		{true, "a.steamcontent.com", "direct", "steamcontent.com"},
 		{true, "10.0.0.5", "direct", "локальной сети"},
