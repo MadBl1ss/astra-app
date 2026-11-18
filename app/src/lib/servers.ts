@@ -63,26 +63,62 @@ export function favoritesOf(s: State): Server[] {
   return s.servers.filter((x) => x.favorite).sort((a, b) => a.order - b.order);
 }
 
-export interface Part {
-  text: string;
-  tone: 'none' | 'warn' | 'bad';
+export type Tone = 'none' | 'warn' | 'bad';
+
+/** What the header of a subscription shows, piece by piece. */
+export interface SubFacts {
+  /** "12 серверов"; "2 в избранном" when some went to the favourites. */
+  count: string;
+  starred: string | null;
+  /** Traffic left: "122 ГБ" of "из 150 ГБ", and the share left for the bar. */
+  traffic: { value: string; of: string; share: number; tone: Tone; title: string } | null;
+  /** The term: "до 25 мая 2027" and how far that is. */
+  term: { value: string; rest: string | null; tone: Tone } | null;
+  updated: string;
 }
 
-/** The line under a subscription's name: size, traffic, term, freshness. */
-export function subLine(sub: Sub, starred: number, now: number): Part[] {
-  const parts: Part[] = [{ text: starred > 0 ? `${t.count(sub.servers)}, ${t.inFavorites(starred)}` : t.count(sub.servers), tone: 'none' }];
+const DAY = 86_400_000;
+
+/** How far a date is, in the unit a person would say. */
+function rest(ms: number): string {
+  const days = Math.floor(ms / DAY);
+  if (days < 1) return t.lessThanDay;
+  if (days < 100) return t.daysLeft(days);
+  return t.monthsLeft(Math.round(days / 30.4));
+}
+
+/** Size, traffic, term and freshness of a subscription. */
+export function subFacts(sub: Sub, starred: number, now: number): SubFacts {
+  let traffic: SubFacts['traffic'] = null;
   if (sub.totalBytes !== null && sub.totalBytes > 0 && sub.usedBytes !== null) {
-    const left = sub.totalBytes - sub.usedBytes;
-    if (left <= 0) parts.push({ text: t.trafficOut, tone: 'bad' });
-    else parts.push({ text: t.left(bytes(left), bytes(sub.totalBytes)), tone: left / sub.totalBytes < 0.1 ? 'warn' : 'none' });
+    const left = Math.max(0, sub.totalBytes - sub.usedBytes);
+    const share = left / sub.totalBytes;
+    traffic =
+      left === 0
+        ? { value: t.trafficOut, of: '', share: 0, tone: 'bad', title: t.trafficOutTitle(bytes(sub.totalBytes)) }
+        : {
+            value: bytes(left),
+            of: t.of(bytes(sub.totalBytes)),
+            share,
+            tone: share < 0.1 ? 'warn' : 'none',
+            title: t.trafficTitle(bytes(left), bytes(sub.totalBytes), bytes(sub.usedBytes)),
+          };
   }
+  let term: SubFacts['term'] = null;
   if (sub.expireAt) {
     const at = Date.parse(sub.expireAt);
-    if (at <= now) parts.push({ text: t.expired(dayMonth(sub.expireAt, now)), tone: 'bad' });
-    else parts.push({ text: t.until(dayMonth(sub.expireAt, now)), tone: at - now < 3 * 86_400_000 ? 'warn' : 'none' });
+    term =
+      at <= now
+        ? { value: t.expired(dayMonth(sub.expireAt, now)), rest: null, tone: 'bad' }
+        : { value: t.until(dayMonth(sub.expireAt, now)), rest: rest(at - now), tone: at - now < 3 * DAY ? 'warn' : 'none' };
   }
-  parts.push({ text: sub.updatedAt ? t.updated(ago(sub.updatedAt, now)) : t.neverUpdated, tone: 'none' });
-  return parts;
+  return {
+    count: t.count(sub.servers),
+    starred: starred > 0 ? t.inFavorites(starred) : null,
+    traffic,
+    term,
+    updated: sub.updatedAt ? t.updated(ago(sub.updatedAt, now)) : t.neverUpdated,
+  };
 }
 
 export interface PingView {

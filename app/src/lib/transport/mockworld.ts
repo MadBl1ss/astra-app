@@ -71,8 +71,9 @@ interface SubPlan {
 }
 
 /**
- * Turns a fixture into a crowded profile: four subscriptions (one that did
- * not update, one about to run out, one run out), two servers added by link,
+ * Turns a fixture into a crowded profile: five subscriptions (one that did
+ * not update, one with no servers at all, one about to run out, one run
+ * out), two servers added by link,
  * 200 servers in all, some with very long names.
  */
 export function crowd(state: State, now: number): State {
@@ -115,6 +116,23 @@ export function crowd(state: State, now: number): State {
       },
       prefix: 'res',
       name: (cc, _ru, city, k) => `${cc}-${k} ${city}`,
+    },
+    {
+      // Carried over from an old install and never alive since: its menu is
+      // the only way to remove it.
+      sub: {
+        id: 's5',
+        name: 'port',
+        url: 'https://port.example.net/…3c1d',
+        servers: 0,
+        updatedAt: null,
+        error: 'в подписке нет ни одного подходящего сервера',
+        expireAt: null,
+        usedBytes: null,
+        totalBytes: null,
+      },
+      prefix: 'port',
+      name: (cc, _ru, _city, k) => `port-${cc}${k}`,
     },
     {
       sub: {

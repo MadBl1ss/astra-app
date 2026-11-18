@@ -13,7 +13,7 @@
   import type { MenuItem } from '../components/Menu.svelte';
   import { ru } from '../i18n/ru';
   import type { Server, State, Sub } from '../proto';
-  import { favoritesOf, groupServers, moved, pingOf, subLine, type Group } from '../servers';
+  import { favoritesOf, groupServers, moved, pingOf, subFacts, type Group } from '../servers';
   import { daemon } from '../store.svelte';
   import { displayName } from '../view';
   import AddDialog from './servers/AddDialog.svelte';
@@ -223,7 +223,7 @@
         <section class="group" id="group-{group.key}">
           <GroupHeader
             title={titleOf(group)}
-            parts={group.sub ? subLine(group.sub, group.starred, minute) : []}
+            facts={group.sub ? subFacts(group.sub, group.starred, minute) : null}
             error={group.sub?.error ?? null}
             note={group.kind === 'favorites' && !isFolded && favorites.length > 1 ? t.favoritesNote : null}
             folded={isFolded}
@@ -231,7 +231,18 @@
             menu={group.sub ? menuOf(group.sub) : []}
             onfold={() => (folded[group.key] = !isFolded)}
           />
-          {#if !isFolded && group.servers.length > 0}
+          {#if !isFolded && group.sub && group.sub.servers === 0}
+            {@const sub = group.sub}
+            <!-- Nothing to list: the two things worth doing are right here,
+                 not only in the menu. -->
+            <div id={listId} class="vacant">
+              <p>{t.emptySub}</p>
+              <Button variant="ghost" icon="refresh" disabled={busy !== null} onclick={() => daemon.rpc('subs.update', { id: sub.id })}>
+                {t.subUpdate}
+              </Button>
+              <Button variant="danger" icon="trash" onclick={() => (dialog = { kind: 'removeSub', sub })}>{t.subRemove}</Button>
+            </div>
+          {:else if !isFolded && group.servers.length > 0}
             <ul id={listId} class="rows">
               {#each group.servers as server, i (server.id)}
                 <ServerRow
@@ -362,6 +373,22 @@
     border: 1px solid var(--line);
     border-radius: var(--r-card);
     background: var(--surface);
+  }
+
+  .vacant {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+    padding: 10px 12px 10px 16px;
+    border: 1px dashed var(--line);
+    border-radius: var(--r-card);
+  }
+
+  .vacant p {
+    flex: 1;
+    min-width: 220px;
+    color: var(--muted);
   }
 
   .body {
