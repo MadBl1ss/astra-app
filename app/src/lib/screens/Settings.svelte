@@ -7,6 +7,7 @@
   import Select, { type SelectItem } from '../components/Select.svelte';
   import SettingRow from '../components/SettingRow.svelte';
   import Switch from '../components/Switch.svelte';
+  import { clock } from '../format';
   import { CITIES, cityOf } from '../globe/cities';
   import { ru } from '../i18n/ru';
   import type { EngineVersion, Settings, State } from '../proto';
@@ -15,6 +16,7 @@
   import { theme, type ThemeChoice } from '../theme.svelte';
   import { toasts } from '../toasts.svelte';
   import { inWindow } from '../transport';
+  import { updates as appUpdates } from '../update.svelte';
   import { flagOfCode, guardLook } from '../view';
   import DiagDialog from './DiagDialog.svelte';
 
@@ -116,6 +118,16 @@
   }
 
   // ---- about ----
+
+  // The window looks for updates by itself; the button looks now, and what
+  // it found stays under it.
+  const updateNote = $derived.by(() => {
+    if (!appUpdates.attached) return t.updatesOff;
+    if (appUpdates.available) return t.updatesFound(appUpdates.available.version);
+    if (appUpdates.lastCheck && !appUpdates.lastCheck.error) return t.updatesLatest(clock(new Date(appUpdates.lastCheck.at).toISOString()));
+    return t.updatesNote;
+  });
+  const updateError = $derived(appUpdates.available ? null : (appUpdates.lastCheck?.error ?? null));
 
   let engines = $state<EngineVersion[] | null>(null);
   $effect(() => {
@@ -369,6 +381,17 @@
           {/each}
         </dl>
       </div>
+      <SettingRow label={t.updates} note={updateNote} error={updateError}>
+        {#snippet children()}
+          {#if appUpdates.available}
+            <Button icon="download" onclick={() => appUpdates.show()}>{ru.update.outdated(appUpdates.available.version)}</Button>
+          {:else}
+            <Button icon="refresh" busy={appUpdates.checking} disabled={!appUpdates.attached} onclick={() => appUpdates.check(true)}>
+              {appUpdates.checking ? t.updatesChecking : t.updatesCheck}
+            </Button>
+          {/if}
+        {/snippet}
+      </SettingRow>
       <SettingRow label={t.check} note={t.checkNote}>
         {#snippet children()}
           <Button icon="pulse" onclick={() => (checking = true)}>{t.checkButton}</Button>

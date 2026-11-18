@@ -16,6 +16,7 @@ import (
 	"strelka/internal/engine"
 	"strelka/internal/engine/enginetest"
 	"strelka/internal/ipc"
+	"strelka/internal/netmon"
 	"strelka/internal/store"
 	"strelka/internal/testjson"
 	"strelka/proto"
@@ -46,8 +47,10 @@ type rig struct {
 	toasts  []proto.Toast
 
 	// network reports a change of the default route to the daemon, in place
-	// of the real monitor.
+	// of the real monitor: up is a network with both IPv4 and IPv6.
 	network func(up bool)
+	// routes reports the routes as they are, for the tests about IPv6.
+	routes func(netmon.State)
 }
 
 // fastPolicy has the shape of the real one with pauses a test can wait out.
@@ -122,9 +125,10 @@ func startRigWith(t *testing.T, paths store.Paths, script string, tweak func(*Op
 	opts := Options{
 		Paths: paths,
 		// The machine's real routes are none of a test's business.
-		WatchNetwork: func(report func(up bool)) func() {
-			r.network = report
-			report(true)
+		WatchNetwork: func(report func(netmon.State)) func() {
+			r.routes = report
+			r.network = func(up bool) { report(netmon.State{V4: up, V6: up}) }
+			r.network(true)
 			return func() {}
 		},
 		Launch: func(cfgPath string) engine.Launch {

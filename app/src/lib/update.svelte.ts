@@ -1,8 +1,9 @@
 // Updates of the app, from GitHub releases through Tauri's updater plugin.
 //
 // The window looks for a new version a while after it starts and every few
-// hours after that. A new one puts the "Обновить" item over Settings and
-// opens a dialog once per version, the first time the window is in sight.
+// hours after that, and whenever the user asks in Settings. A new one puts
+// the "Обновить" item over Settings and opens a dialog once per version, the
+// first time the window is in sight; asked for, it opens at once.
 // Installing stops the service for a minute (the installer replaces it),
 // so the VPN and the guard are down meanwhile, and Windows closes the app;
 // the installer starts it again. The next start says how it went.
@@ -24,6 +25,14 @@ export interface UpdateSource {
   download(progress: (got: number, total: number | null) => void, downloaded: () => void): Promise<void>;
   /** On Windows the app exits here when the installer has started. */
   install(): Promise<void>;
+}
+
+/** How the last look for a new version ended. */
+export interface LastCheck {
+  /** Epoch ms. */
+  at: number;
+  /** Words for the user when it failed. */
+  error: string | null;
 }
 
 export type UpdatePhase =
@@ -82,6 +91,9 @@ class Updates {
   total = $state<number | null>(null);
   error = $state<string | null>(null);
   checking = $state(false);
+  /** Updates come to this window at all: a development build gets none. */
+  attached = $state(false);
+  lastCheck = $state.raw<LastCheck | null>(null);
   /** The version the last start found itself updated to, for the 'done' line. */
   installed = $state<string | null>(null);
 
@@ -95,6 +107,7 @@ class Updates {
   attach(source: UpdateSource, visible: boolean): void {
     this.#source = source;
     this.#visible = visible;
+    this.attached = true;
     this.#afterRestart();
     // After a missed update the retry button needs the offer at once.
     setTimeout(() => void this.check(), this.phase === 'missed' ? 0 : FIRST_CHECK_MS);
@@ -107,16 +120,28 @@ class Updates {
     if (shown) this.#offer();
   }
 
-  /** Looks once. A failure is quiet: it is a background check. */
-  async check(): Promise<void> {
+  /**
+   * Looks once. In the background a failure stays quiet (no network, GitHub
+   * down: next time) and only Settings shows it under the button; `asked`
+   * is the button itself, and a new version found then opens at once.
+   */
+  async check(asked = false): Promise<void> {
     if (!this.#source || this.checking || this.#busy()) return;
     this.checking = true;
+    let error: string | null = null;
     try {
       this.available = await this.#source.check();
-    } catch {
-      // No network, GitHub down: next time.
+    } catch (err) {
+      error = explain(err, 'check');
     } finally {
       this.checking = false;
+    }
+    this.lastCheck = { at: Date.now(), error };
+    const v = this.available?.version;
+    if (asked && v && !error) {
+      write(SHOWN_KEY, v);
+      this.show();
+      return;
     }
     this.#offer();
   }

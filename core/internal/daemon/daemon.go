@@ -24,6 +24,7 @@ import (
 	"strelka/internal/ipc"
 	"strelka/internal/journal"
 	"strelka/internal/legacyfind"
+	"strelka/internal/netmon"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
 	"strelka/internal/stats"
@@ -77,8 +78,9 @@ type Options struct {
 	Health     *health.Tuning
 	HealthTick time.Duration
 	// WatchNetwork replaces the route monitor: it is given the function to
-	// report "is there a default route" with and returns how to stop.
-	WatchNetwork func(report func(up bool)) (stop func())
+	// report the default routes with and returns how to stop. Without it the
+	// daemon also reads the routes once before its first config.
+	WatchNetwork func(report func(netmon.State)) (stop func())
 
 	// Guard is the kill switch. Nil means none - and it is nil unless the
 	// caller says otherwise, so that nothing but cmd/strelkad ever reaches
@@ -161,6 +163,7 @@ type Daemon struct {
 	live        atomic.Bool                  // phase is "on": the API may be asked
 	checkedBox  atomic.Uint64                // plan generation whose config passed the check
 	checkedXray atomic.Uint64
+	noV6        atomic.Bool // the network has no IPv6 way out, see ipv6Mode
 
 	// Everything below belongs to the loop goroutine.
 	st         proto.State
@@ -292,6 +295,15 @@ func New(opts Options) (*Daemon, error) {
 	d.srv = ipc.NewServer(d.handle)
 	d.sup = d.supervise(boxName, d.prepareBox)
 	d.xsup = d.supervise(xrayName, d.prepareXray)
+
+	if opts.WatchNetwork == nil {
+		// The first config already knows whether the network has IPv6;
+		// otherwise the monitor's first report would restart the engine
+		// that has only just been started.
+		if st, err := netmon.Now([]string{confgen.TUNName}); err == nil && st.Up() {
+			d.noV6.Store(!st.V6)
+		}
+	}
 
 	d.prof.FixSelection()
 	d.replan()

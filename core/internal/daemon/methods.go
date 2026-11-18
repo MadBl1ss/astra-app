@@ -423,7 +423,7 @@ func cleanSettings(s proto.Settings) proto.Settings {
 	if s.Notify != "all" && s.Notify != "important" && s.Notify != "silent" {
 		s.Notify = def.Notify
 	}
-	if s.IPv6 != "tunnel" && s.IPv6 != "block" {
+	if s.IPv6 != proto.IPv6Tunnel && s.IPv6 != proto.IPv6Block {
 		s.IPv6 = def.IPv6
 	}
 	if _, ok := autoUpdateEvery(s.AutoUpdateSubs); !ok {

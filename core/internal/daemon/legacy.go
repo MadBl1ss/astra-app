@@ -173,9 +173,12 @@ func (d *Daemon) adoptLegacy(ld *legacyData, failed []string) *proto.LegacyImpor
 		res.Failed = []string{}
 	}
 	if ld.rules != nil {
-		d.rules = *ld.rules
+		// The old Strelka's lists predate everything the built-in ones have
+		// gained since, so they get all of it, as an old install of ours
+		// would on its update.
+		d.rules = rules.WithAdditions(*ld.rules, 0)
 		if err := d.saveRules(); err == nil {
-			res.Rules = d.rules.Count()
+			res.Rules = ld.rules.Count()
 			d.log(proto.CatRules, proto.LevelInfo, fmt.Sprintf("Правила перенесены из старой Стрелки: %d.", res.Rules))
 		}
 	}

@@ -11,7 +11,13 @@
 //   - the log goes to stderr, where the daemon reads it;
 //   - no web panel;
 //   - the Xray helper is exempted by its full path, not by the name
-//     "xray.exe" that any program could take.
+//     "xray.exe" that any program could take;
+//   - programs of the direct list go before the sniffer (direct-early).
+//     The sniffer holds a new TCP connection for up to 300 ms waiting for
+//     its first bytes, and a protocol where the server speaks first (game
+//     boosters, mail, databases) waits all of it, every time. A program that
+//     goes direct whatever site it talks to needs no sniffing. Its DNS still
+//     goes after the sniffer, to be answered by the engine.
 package confgen
 
 import (
@@ -82,7 +88,7 @@ type Input struct {
 	Selected string // falls back to the first server
 	Mode     string // proto.ModeRule | proto.ModeGlobal
 
-	IPv6        string // "tunnel": IPv6 goes into the TUN; "block": IPv4 only
+	IPv6        string // proto.IPv6Tunnel: IPv6 goes into the TUN; proto.IPv6Block: IPv4 only
 	StrictRoute bool
 	// LocalProxyPort adds a mixed (HTTP + SOCKS) proxy on 127.0.0.1; 0 is off.
 	LocalProxyPort int
@@ -152,7 +158,7 @@ func Build(in Input) ([]byte, error) {
 			if in.NoTUN {
 				continue
 			}
-			if in.IPv6 == "block" {
+			if in.IPv6 == proto.IPv6Block {
 				// With strict_route an address family the TUN does not carry
 				// is unreachable, which is the point.
 				ib["address"] = firstOnly(ib["address"])
@@ -224,6 +230,10 @@ func Build(in Input) ([]byte, error) {
 		case "local-proxy":
 			if localProxy == 0 {
 				continue
+			}
+		case "direct-early":
+			if in.NoTUN {
+				continue // it is about the TUN's connections and names its inbound
 			}
 		}
 		rules = append(rules, r)

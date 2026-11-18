@@ -171,10 +171,11 @@ Windows не выпускает его мимо VPN, пока тот перез�
 
 ### Обновление
 
-Окно раз в несколько часов проверяет, нет ли новой версии. Если есть — над
-«Настройками» появляется значок «Обновить», а окошко с описанием изменений
-откроется само один раз. «Установить сейчас» скачивает установщик, проверяет
-его подпись и запускает.
+Окно раз в несколько часов проверяет, нет ли новой версии; не ждать можно
+кнопкой «Проверить сейчас» в «Настройках» → «О программе». Если версия есть —
+над «Настройками» появляется значок «Обновить», а окошко с описанием
+изменений откроется само один раз. «Установить сейчас» скачивает установщик,
+проверяет его подпись и запускает.
 
 - Windows спросит разрешения: установка — для всех пользователей.
 - На минуту VPN и замок выключатся: вместе с окном обновляется служба. Потом
@@ -477,7 +478,8 @@ Windows 10 or 11, 64-bit.
 Strelka is installed for all users: the window goes to
 `C:\Program Files\Strelka`, and the `Strelka` service starts with Windows.
 
-**Updates**: the window checks for a new version every few hours and shows an
+**Updates**: the window checks for a new version every few hours (or at once:
+Settings → О программе → «Проверить сейчас») and shows an
 «Обновить» (Update) icon above Settings. The installer is downloaded, its
 signature checked, and it runs; the VPN and the kill switch are off for about
 a minute while the service is updated and come back on by themselves.
