@@ -3,6 +3,8 @@
 package engine
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -93,5 +95,23 @@ func normalizePath(path string) string {
 	return path
 }
 
-// Alive reports whether a process with this PID is still running.
-func Alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
+// Alive reports whether a process with this PID is still running. A zombie
+// is not: it has ended and holds no port or file, only its parent has yet
+// to collect its exit code (a test that killed its own child, say), and
+// kill(pid, 0) still succeeds on it.
+func Alive(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return !errors.Is(err, os.ErrNotExist)
+	}
+	// "pid (name) state ...": the name may hold spaces and parentheses, so
+	// the state is found after the last closing one.
+	i := bytes.LastIndexByte(stat, ')')
+	if i < 0 || i+2 >= len(stat) {
+		return true
+	}
+	return stat[i+2] != 'Z'
+}
