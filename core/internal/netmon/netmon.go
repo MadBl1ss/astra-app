@@ -18,6 +18,11 @@ type State struct {
 // Up reports whether there is any default route.
 func (s State) Up() bool { return s.V4 || s.V6 }
 
+// Now reads the routes once, the way a monitor would. The daemon asks before
+// its first config: whether the network has IPv6 shapes that config, and
+// waiting for the monitor's first report would mean building it twice.
+func Now(ignore []string) (State, error) { return read(ignore) }
+
 // pollEvery is the pace where the system offers no notifications (Linux
 // until stage 09 brings netlink), and the fallback if they fail to register.
 const pollEvery = 5 * time.Second

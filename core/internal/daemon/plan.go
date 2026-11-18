@@ -54,7 +54,7 @@ func (d *Daemon) planFor(p *profile.Profile, s proto.Settings, prev map[string]i
 	pl.in = confgen.Input{
 		Selected:       p.Selected,
 		Mode:           p.Mode,
-		IPv6:           s.IPv6,
+		IPv6:           d.ipv6Mode(s.IPv6),
 		StrictRoute:    true, // a setting only if stage 04 finds it breaks something
 		LocalProxyPort: s.LocalProxyPort,
 		NoTUN:          d.opts.NoTUN,
@@ -72,6 +72,22 @@ func (d *Daemon) planFor(p *profile.Profile, s proto.Settings, prev map[string]i
 	}
 	pl.in.SelfMatch, pl.in.SelfHosts = d.selfRule()
 	return pl, nil
+}
+
+// ipv6Mode is the IPv6 setting as the config gets it. "tunnel" puts IPv6
+// into the TUN so that it cannot go around the VPN; on a network with no
+// IPv6 way out there is nothing to go around, and an IPv6 address on the
+// TUN would only make programs believe in IPv6. A connection to an IPv6
+// address would then be accepted by the engine and dropped a moment later,
+// since the direct way has no IPv6 to leave by: game boosters and torrent
+// clients take that for a working route. Without IPv6 on the network the TUN
+// is IPv4 only, as with "block", and programs are refused at once, as they
+// would be without the VPN.
+func (d *Daemon) ipv6Mode(setting string) string {
+	if setting == proto.IPv6Tunnel && d.noV6.Load() {
+		return proto.IPv6Block
+	}
+	return setting
 }
 
 // replan freezes the current profile and settings for the next start. It is

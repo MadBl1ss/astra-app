@@ -309,17 +309,41 @@ func (d *Daemon) saveStats(now time.Time) {
 // watchNetwork starts the route monitor; its observations come back into
 // the loop.
 func (d *Daemon) watchNetwork() (stop func()) {
-	report := func(up bool) {
+	report := func(s netmon.State) {
 		d.post(func() {
-			d.opts.Logf("network: default route present: %v", up)
-			d.feed(health.Network{Up: up})
+			d.opts.Logf("network: default route present: %v (IPv4 %v, IPv6 %v)", s.Up(), s.V4, s.V6)
+			d.feed(health.Network{Up: s.Up()})
+			d.noteIPv6(s)
 		})
 	}
 	if d.opts.WatchNetwork != nil {
 		return d.opts.WatchNetwork(report)
 	}
-	m := netmon.Start(d.tune.NetDebounce, []string{confgen.TUNName}, func(s netmon.State) { report(s.Up()) })
+	m := netmon.Start(d.tune.NetDebounce, []string{confgen.TUNName}, report)
 	return m.Close
+}
+
+// noteIPv6 follows whether the network has a way out over IPv6 at all. The
+// TUN carries IPv6 only where there is some (see ipv6Mode), so when that
+// changes a running engine is restarted onto a new config. A network that is
+// gone altogether says nothing about IPv6 and is not taken for a change.
+func (d *Daemon) noteIPv6(s netmon.State) {
+	if !s.Up() {
+		return
+	}
+	none := !s.V6
+	if d.noV6.Swap(none) == none {
+		return
+	}
+	d.opts.Logf("network: IPv6 way out: %v", s.V6)
+	if d.opts.NoTUN || d.st.Settings.IPv6 != proto.IPv6Tunnel {
+		return // the config does not depend on it
+	}
+	why := "в сети появился IPv6"
+	if none {
+		why = "в сети больше нет IPv6"
+	}
+	d.applyPlanChange(why)
 }
 
 // ---- probes ----------------------------------------------------------------

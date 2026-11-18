@@ -192,6 +192,17 @@ type Incident struct {
 	Unstable bool      `json:"unstable"`
 }
 
+// The values of Settings.IPv6.
+const (
+	// IPv6Tunnel takes IPv6 into the TUN, so that it cannot go around the
+	// VPN. On a network without IPv6 the TUN gets none either: there is
+	// nothing to go around, and a TUN with an IPv6 address would make
+	// programs believe in IPv6 that leads nowhere.
+	IPv6Tunnel = "tunnel"
+	// IPv6Block gives the TUN no IPv6 address, and the engine blocks IPv6.
+	IPv6Block = "block"
+)
+
 type Settings struct {
 	Notify          string `json:"notify"`
 	QuietFullscreen bool   `json:"quietFullscreen"`
@@ -211,7 +222,7 @@ func DefaultSettings() Settings {
 		QuietFullscreen: true,
 		Guard:           true,
 		AllowLAN:        true,
-		IPv6:            "tunnel",
+		IPv6:            IPv6Tunnel,
 		Failover:        false,
 		AutoUpdateSubs:  "12h",
 		LocalProxyPort:  0,

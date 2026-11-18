@@ -16,6 +16,7 @@ import (
 
 	"strelka/internal/engine"
 	"strelka/internal/engine/enginetest"
+	"strelka/internal/netmon"
 	"strelka/internal/rules"
 	"strelka/internal/testjson"
 	"strelka/proto"
@@ -529,6 +530,66 @@ func TestSettingsArePersistedAndRebuildTheConfig(t *testing.T) {
 	r = startRig(t, paths, "ok")
 	if s := r.last.Settings; s.LocalProxyPort != 2080 || s.IPv6 != "block" || s.Notify != "all" || s.Guard {
 		t.Errorf("настройки после перезапуска службы: %+v", s)
+	}
+}
+
+// "tunnel" puts IPv6 into the TUN only where the network has some: on a
+// network without IPv6 an address on the TUN would make programs believe in
+// IPv6 that leads nowhere. The engine is rebuilt when that changes, and only
+// then.
+func TestTunnelIPv6FollowsTheNetwork(t *testing.T) {
+	paths := newData(t)
+	r := startRig(t, paths, "ok")
+	r.call(proto.MethodVPNStart, nil, nil)
+	r.waitPhase(proto.PhaseOn)
+	tunAddress := func() string {
+		cfg, _ := os.ReadFile(paths.RunConfig())
+		return testjson.Get(testjson.Find(cfg, "inbounds", "type", "tun"), "address")
+	}
+	if got := tunAddress(); !strings.Contains(got, "fdfe:") {
+		t.Fatalf("в сети есть IPv6, а у TUN его нет: %s", got)
+	}
+	pid := r.engine().PID
+
+	// IPv6 is gone: the TUN loses its IPv6 address.
+	r.routes(netmon.State{V4: true})
+	r.waitState("перезапуск без IPv6", func(proto.State) bool { return r.journalHas(proto.LevelInfo, "в сети больше нет IPv6") })
+	r.waitPhase(proto.PhaseOn)
+	if got := tunAddress(); got != `["172.19.0.1/30"]` {
+		t.Errorf("в сети нет IPv6, а TUN его даёт: %s", got)
+	}
+	if r.engine().PID == pid {
+		t.Error("пропажа IPv6 не перезапустила движок")
+	}
+	pid = r.engine().PID
+
+	// No network at all, then the same IPv4-only network back: nothing to
+	// rebuild.
+	r.routes(netmon.State{})
+	r.routes(netmon.State{V4: true})
+	r.routes(netmon.State{V4: true})
+	time.Sleep(300 * time.Millisecond)
+	if st := r.state(); r.engine().PID != pid || st.VPN.Phase != proto.PhaseOn {
+		t.Errorf("сеть без перемен в IPv6 перезапустила движок: фаза %s", st.VPN.Phase)
+	}
+
+	// IPv6 is back: so is the address.
+	r.routes(netmon.State{V4: true, V6: true})
+	r.waitState("перезапуск с IPv6", func(proto.State) bool { return r.journalHas(proto.LevelInfo, "в сети появился IPv6") })
+	r.waitPhase(proto.PhaseOn)
+	if got := tunAddress(); !strings.Contains(got, "fdfe:") {
+		t.Errorf("IPv6 вернулся, а у TUN его нет: %s", got)
+	}
+
+	// With "block" the network's IPv6 makes no difference to the config.
+	r.call(proto.MethodSettingsSet, map[string]any{"patch": map[string]any{"ipv6": "block"}}, nil)
+	r.waitPhase(proto.PhaseStarting)
+	r.waitPhase(proto.PhaseOn)
+	pid = r.engine().PID
+	r.routes(netmon.State{V4: true})
+	time.Sleep(300 * time.Millisecond)
+	if r.engine().PID != pid {
+		t.Error("при «блокировать» пропажа IPv6 перезапустила движок")
 	}
 }
 
