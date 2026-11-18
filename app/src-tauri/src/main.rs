@@ -2,12 +2,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! The shell of Strelka's window. It is deliberately thin: a window, a tray
-//! icon, a window for toasts, one running copy, start at login, and a bridge
+//! icon, a window for toasts, one running copy, start at login, updates, the
+//! old Strelka's autostart entry, and a bridge
 //! that carries lines of JSON between the page and the daemon. What those
 //! lines mean is the page's business (app/src/lib), so a new daemon method
 //! needs no change here.
 
 mod bridge;
+mod legacy;
 mod toasts;
 mod tray;
 
@@ -35,6 +37,10 @@ fn main() {
         // The fallback for toasts when their own window is not wanted or
         // could not be made.
         .plugin(tauri_plugin_notification::init())
+        // New versions from GitHub releases; the page drives it
+        // (lib/update.svelte.ts), the key and the address are in
+        // tauri.conf.json.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tray::remembered())
@@ -51,6 +57,8 @@ fn main() {
             toasts::toasts_native,
             toasts::toasts_place,
             toasts::screen_busy,
+            legacy::legacy_tray_autostart,
+            legacy::legacy_tray_autostart_off,
         ])
         .setup(move |app| {
             tray::build(app.handle())?;

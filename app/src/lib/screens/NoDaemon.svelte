@@ -3,6 +3,7 @@
   import Icon from '../components/Icon.svelte';
   import { ru } from '../i18n/ru';
   import { daemon } from '../store.svelte';
+  import { updates } from '../update.svelte';
 
   // Two cases share the screen: the daemon cannot be reached, or it can but
   // speaks another protocol version. Either way nothing else works.
@@ -16,8 +17,11 @@
     <span class="ico"><Icon name={outdated ? 'info' : 'plug'} size={28} /></span>
     {#if outdated}
       <h1>{t.outdatedTitle}</h1>
-      <p>{t.outdatedBody}</p>
+      <p>{updates.available ? t.outdatedUpdate : t.outdatedBody}</p>
       <p class="fine mono">{t.versions(outdated.app, outdated.daemon)}</p>
+      {#if updates.available}
+        <Button icon="download" onclick={() => updates.show()}>{ru.update.outdated(updates.available.version)}</Button>
+      {/if}
     {:else}
       <h1>{t.title}</h1>
       <p>{t.body}</p>

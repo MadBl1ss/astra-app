@@ -11,7 +11,9 @@
   import Nav, { SECTIONS, type Section } from './lib/shell/Nav.svelte';
   import ToastLayer from './lib/shell/ToastLayer.svelte';
   import Titlebar from './lib/shell/Titlebar.svelte';
+  import UpdateDialog from './lib/shell/UpdateDialog.svelte';
   import { daemon } from './lib/store.svelte';
+  import { updates } from './lib/update.svelte';
 
   let section = $state<Section>('home');
 
@@ -94,6 +96,10 @@
     </div>
   {/if}
 </div>
+
+{#if updates.open}
+  <UpdateDialog />
+{/if}
 
 <ToastLayer />
 

@@ -1,4 +1,3 @@
-import { version as APP_VERSION } from '../../package.json';
 import { ru } from './i18n/ru';
 import {
   PROTO,
@@ -13,6 +12,7 @@ import {
   type Toast,
 } from './proto';
 import { RpcError, type LinkStatus, type Transport } from './transport';
+import { app } from './version';
 
 /** Speed and connection count of one path of the scheme. */
 export interface PathRate {
@@ -100,9 +100,9 @@ class Daemon {
   async #open(): Promise<void> {
     const transport = this.#transport!;
     try {
-      const hello = await transport.call('hello', { client: 'app', version: APP_VERSION, proto: PROTO });
+      const hello = await transport.call('hello', { client: 'app', version: app.version, proto: PROTO });
       if (hello.proto !== PROTO) {
-        this.outdated = { app: APP_VERSION, daemon: hello.version };
+        this.outdated = { app: app.version, daemon: hello.version };
         return;
       }
       this.outdated = null;

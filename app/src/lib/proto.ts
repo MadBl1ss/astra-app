@@ -206,6 +206,23 @@ export interface LegacyImportResult {
   failed: string[];
 }
 
+/** An old Strelka found on the machine (legacy.detect). */
+export interface LegacyFolder {
+  dir: string;
+  /** Its own VPN is up: the new one must not be started next to it. */
+  running: boolean;
+  /** The enabled logon task starts it. */
+  autostart: boolean;
+  /** Names of its subscriptions, never the links; [''] for a lone unnamed one. */
+  subs: string[];
+}
+
+export interface LegacyRetireResult {
+  /** How many of its programs were stopped. */
+  stopped: number;
+  task: 'disabled' | 'absent';
+}
+
 export type RuleListName = 'vpn' | 'direct';
 export type RuleKind = 'process' | 'suffix' | 'domain' | 'keyword' | 'ip';
 
@@ -300,9 +317,10 @@ export interface Methods {
   'place.detect': { params: undefined; result: Place };
   'place.set': { params: { lat: number; lon: number; city: string; country?: string }; result: Empty };
   'diag.run': { params: undefined; result: { steps: DiagStep[] } };
-  /** running: the old Strelka's own VPN is up; do not start a second one next to it. */
-  'legacy.detect': { params: undefined; result: { dir: string | null; running: boolean } };
+  /** found: every old Strelka, the preferred first; dir and running repeat the first. */
+  'legacy.detect': { params: undefined; result: { dir: string | null; running: boolean; found: LegacyFolder[] } };
   'legacy.import': { params: { dir: string }; result: LegacyImportResult };
+  'legacy.retire': { params: undefined; result: LegacyRetireResult };
 }
 
 export type MethodName = keyof Methods;

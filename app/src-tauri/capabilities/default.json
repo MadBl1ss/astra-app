@@ -12,6 +12,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "opener:allow-reveal-item-in-dir",
-    "notification:default"
+    "notification:default",
+    "updater:default"
   ]
 }

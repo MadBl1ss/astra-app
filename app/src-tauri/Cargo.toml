@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Strelka: the window and the tray icon of the VPN client"
 license = "MIT"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.90"
 publish = false
 
 [build-dependencies]
@@ -17,8 +17,12 @@ tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
+# New versions from GitHub releases; 2.14 needs Rust 1.90.
+tauri-plugin-updater = "2.14"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
+# generate_context! writes the plugins section of tauri.conf.json as JSON values.
+serde_json = "1"
 # The bridge to the daemon: a named pipe on Windows, a unix socket on Linux.
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "macros"] }
 
@@ -28,7 +32,7 @@ tokio = { version = "1", features = ["rt", "macros", "net"] }
 # The toast window is shown without taking the focus, which Tauri cannot do
 # by itself; the same version as Tauri's own, so it is built once.
 [target."cfg(windows)".dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Pipes", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Pipes", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
 
 [profile.release]
 codegen-units = 1

@@ -152,7 +152,42 @@ export const ru = {
     outdatedTitle: 'Обнови Стрелку',
     outdatedBody:
       'Окно и служба от разных версий и не понимают друг друга. Установи свежую Стрелку поверх этой.',
+    outdatedUpdate: 'Окно и служба от разных версий и не понимают друг друга. Новая версия уже вышла — она поставит обе части заново.',
     versions: (app: string, daemon: string) => `Окно ${app}, служба ${daemon}`,
+  },
+
+  update: {
+    nav: 'Обновить',
+    navHint: (v: string) => `Вышла Стрелка ${v}`,
+    title: (v: string) => `Стрелка ${v}`,
+    released: (day: string, current: string) => `${day} · сейчас стоит ${current}`,
+    current: (current: string) => `Сейчас стоит ${current}`,
+    notesEmpty: 'Описания изменений нет.',
+    warning:
+      'На минуту VPN и замок выключатся: вместе с окном обновляется служба. Windows спросит разрешения, окно закроется и откроется снова.',
+    install: 'Установить сейчас',
+    later: 'Позже',
+    downloading: 'Скачиваю',
+    progress: (got: string, total: string | null) => (total ? `${got} из ${total}` : got),
+    verifying: 'Проверяю подпись…',
+    restarting: 'Перезапускаю…',
+    restartingNote: 'Сейчас Windows спросит разрешения на установку. Окно закроется, установщик покажет свою полоску и откроет Стрелку снова.',
+    retry: 'Повторить',
+    close: 'Закрыть',
+    doneTitle: (v: string) => `Стрелка обновлена до ${v}`,
+    doneBody: 'Служба тоже обновилась. Если VPN был включён, он включился снова.',
+    missedTitle: 'Обновление не установилось',
+    missedBody: (v: string, current: string) =>
+      `Стрелка ${v} не встала, стоит прежняя ${current}. Попробуй ещё раз — если повторится, установщик с сайта выпусков поставится поверх.`,
+    ok: 'Хорошо',
+    outdated: (v: string) => `Обновить до ${v}`,
+    errors: {
+      check: 'Не получилось узнать о новой версии: нет связи с GitHub.',
+      network: 'Загрузка оборвалась. Проверь интернет и попробуй ещё раз.',
+      signature: 'Подпись скачанного файла не сошлась, ставить его нельзя. Попробуй ещё раз позже.',
+      uac: 'Windows не дала прав на установку. Нажми «Повторить» и согласись в окне Windows.',
+      install: 'Установщик не запустился. Попробуй ещё раз.',
+    },
   },
 
   servers: {
@@ -438,17 +473,32 @@ export const ru = {
     starting: 'Подключаю…',
     notLink: 'Это не похоже на ссылку. Нужна https://… или vless://, trojan://, ss://, hysteria2://.',
     empty: 'Вставь ссылку.',
-    legacyTitle: 'Нашлась старая Стрелка',
-    legacyText: 'Можно перенести её подписки и правила. Сама старая Стрелка при этом не меняется.',
-    legacyRunning:
-      'Она сейчас работает. Перенести можно и так, но подключать новую, пока не выключена старая, не стоит: два VPN сразу мешают друг другу.',
+    legacyTitle: (n: number) => (n > 1 ? 'Нашлись старые Стрелки' : 'Нашлась старая Стрелка'),
+    legacyPick: 'Выбери, откуда переносить:',
+    legacySubs: (names: string[]) => {
+      const named = names.filter(Boolean);
+      const count = `${names.length} ${plural(names.length, ['подписка', 'подписки', 'подписок'])}`;
+      if (names.length === 0) return 'нет подписок';
+      return named.length > 0 ? `${count}: ${named.join(', ')}` : count;
+    },
+    legacyRunningNow: 'работает сейчас',
+    legacyAtLogin: 'запускается при входе в Windows',
+    legacyText: 'Перенесу подписки, правила и выбранный сервер. Файлы старой Стрелки останутся на месте.',
+    legacyRetireNote: (many: boolean) =>
+      many
+        ? 'Старые Стрелки выключатся и больше не будут запускаться при входе в Windows: иначе они выключали бы новую.'
+        : 'Старая Стрелка выключится и больше не будет запускаться при входе в Windows: иначе она выключала бы новую.',
     legacyImport: 'Перенести и подключить',
-    legacyImportOnly: 'Перенести',
+    legacyImportOnly: 'Только перенести',
     legacyBusy: 'Переношу…',
+    legacyRetiring: 'Выключаю старую…',
     legacyDone: (subs: number, servers: number, rules: number) =>
       `Перенесено: ${subs} ${plural(subs, ['подписка', 'подписки', 'подписок'])}, ${servers} ${plural(servers, ['сервер', 'сервера', 'серверов'])}, ${rules} ${plural(rules, ['правило', 'правила', 'правил'])}.`,
     legacyFailed: (names: string) => `Не скачались: ${names}. Их можно обновить позже в «Серверах».`,
-    legacyThenConnect: 'Выключи старую Стрелку и нажми «Подключить».',
+    legacyThenConnect:
+      'Новую можно подключить, когда старая выключена: она выключает чужие VPN при каждом входе в Windows. Её файлы останутся на месте.',
+    legacyRetireAndConnect: 'Выключить старую и подключить',
+    legacyTrayFailed: (why: string) => `Не получилось убрать старый значок из автозапуска (${why}). Его можно выключить в Диспетчере задач, вкладка «Автозагрузка».`,
     connectImported: 'Подключить',
     or: 'или',
     skip: 'Пропустить, разберусь сам',
@@ -604,6 +654,14 @@ export const mock = {
   diagJournalBroken: (what: string) => `Проверка соединения: ${what.charAt(0).toLowerCase()}${what.slice(1)}`,
 
   legacyDir: 'C:\\Users\\Тест\\Downloads\\sing-box-1.14.0-windows-amd64',
+  legacyDirRunning: 'C:\\Users\\Тест\\Desktop\\strelka-sing-box',
+  legacyStuck: 'Старая Стрелка выключилась не до конца: sing-box.exe: Отказано в доступе. Закрой её значок в трее и попробуй ещё раз.',
+  legacyRetired: (n: number) => `Старая Стрелка выключена: программ остановлено — ${n}, автозапуск выключен.`,
+  legacyTray: 'C:\\Users\\Тест\\Desktop\\strelka-sing-box\\sing-box-tray.exe',
+  updateVersion: '0.2.0',
+  updateDate: '2026-11-20T09:00:00Z',
+  updateNotes:
+    'Перенос со старой Стрелки: можно выбрать папку, если их несколько, и выключить старую одной кнопкой.\nОбновления приходят сами: значок над «Настройками».\nСлужба быстрее поднимает VPN после сна.',
   legacyNotHere: 'В этой папке нет старой Стрелки: не нашлись ни subscription.txt, ни config.json.',
   legacyImported: (n: number) => `Из старой Стрелки перенесено подписок: ${n}.`,
 
