@@ -156,6 +156,23 @@
     ],
     "rules": [
       {
+        "mode": "and",
+        "outbound": "direct",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "rule_set": "direct"
+          },
+          {
+            "invert": true,
+            "port": 53
+          }
+        ],
+        "type": "logical"
+      },
+      {
         "action": "sniff"
       },
       {

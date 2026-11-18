@@ -268,7 +268,7 @@ func TestBuildKeepsThePromises(t *testing.T) {
 	}
 	// Order matters: LAN and the direct list win over "all traffic".
 	order := testjson.Get(raw, "route.rules")
-	private, direct, glob, vpn := strings.Index(order, "ip_is_private"), strings.Index(order, `"rule_set":"direct"`),
+	private, direct, glob, vpn := strings.Index(order, "ip_is_private"), strings.LastIndex(order, `"rule_set":"direct"`),
 		strings.Index(order, "clash_mode"), strings.Index(order, `"rule_set":"vpn"`)
 	if !(private >= 0 && private < direct && direct < glob && glob < vpn) {
 		t.Errorf("порядок правил: private=%d direct=%d global=%d vpn=%d", private, direct, glob, vpn)
@@ -280,6 +280,38 @@ func TestBuildKeepsThePromises(t *testing.T) {
 	raw, _ = Build(in)
 	if got := testjson.Get(testjson.Find(raw, "outbounds", "tag", SelectorTag), "default"); got != in.Servers[0].ID {
 		t.Errorf("пропавший выбор: default=%q", got)
+	}
+}
+
+// Programs of the direct list go before the sniffer, so that a connection
+// whose server speaks first does not wait out the sniff timeout. Their DNS
+// does not: it is answered by the engine after the sniffer.
+func TestDirectProgramsSkipTheSniffer(t *testing.T) {
+	in, _ := base(t, false, "t-DE")
+	raw, err := Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := testjson.Get(raw, "route.rules.0")
+	for _, want := range []string{`"type":"logical"`, `"mode":"and"`, `{"inbound":"tun-in"}`, `{"rule_set":"direct"}`,
+		`{"invert":true,"port":53}`, `"outbound":"direct"`} {
+		if !strings.Contains(first, want) {
+			t.Errorf("первое правило должно отправлять программы из «напрямую» мимо сниффера, без DNS; нет %s: %s", want, first)
+		}
+	}
+	if testjson.Get(raw, "route.rules.1.action") != "sniff" {
+		t.Errorf("второе правило — сниффер: %s", testjson.Get(raw, "route.rules.1"))
+	}
+	// The sites of the direct list still need the sniffer, after it.
+	order := testjson.Get(raw, "route.rules")
+	if strings.Count(order, `"rule_set":"direct"`) != 2 || strings.LastIndex(order, `"rule_set":"direct"`) < strings.Index(order, `"sniff"`) {
+		t.Errorf("правило со списком «напрямую» после сниффера пропало: %s", order)
+	}
+
+	in.NoTUN = true
+	raw, _ = Build(in)
+	if strings.Contains(testjson.Get(raw, "route.rules"), "tun-in") {
+		t.Errorf("без TUN правило про его соединения не нужно: %s", testjson.Get(raw, "route.rules"))
 	}
 }
 

@@ -181,6 +181,58 @@ func TestEnsureStartsFromBuiltInLists(t *testing.T) {
 	}
 }
 
+// What the built-in lists gain later reaches an existing install once: not
+// again after the user has removed it, and not over the user's own choice
+// of the other list.
+func TestAdditionsReachAnOldInstallOnce(t *testing.T) {
+	for _, a := range additions {
+		d := Defaults()
+		if !slices.Contains(*field(d.list(a.list), a.kind), a.value) {
+			t.Errorf("%s нет среди встроенных: у новой установки его не будет", a.value)
+		}
+	}
+
+	// A folder from before the additions, with the user's own lists and no
+	// mark of what it has taken.
+	dir := t.TempDir() + "/rules"
+	old := Set{}
+	old.Direct.Processes = []string{"steam.exe"}
+	old.VPN.Processes = []string{"exitlag.exe"} // the user wants this one through the VPN
+	if err := Save(dir, old); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Ensure(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(s.Direct.Processes, " ") != "ExitLag.exe steam.exe" || strings.Join(s.VPN.Processes, " ") != "exitlag.exe" {
+		t.Fatalf("после обновления: direct=%v vpn=%v", s.Direct.Processes, s.VPN.Processes)
+	}
+
+	// The user removes it: the next start does not bring it back.
+	s.Direct.Processes = []string{"steam.exe"}
+	if err := Save(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Ensure(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(again.Direct.Processes, " ") != "steam.exe" {
+		t.Errorf("удалённое вернулось: %v", again.Direct.Processes)
+	}
+
+	// A fresh install has them already and takes nothing on top later.
+	fresh := t.TempDir() + "/rules"
+	first, err := Ensure(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readTaken(fresh) != len(additions) || !slices.Contains(first.Direct.Processes, "ExitLag.exe") {
+		t.Errorf("новая установка: взято %d из %d, direct=%v", readTaken(fresh), len(additions), first.Direct.Processes)
+	}
+}
+
 func TestWriteServersDNS(t *testing.T) {
 	dir := t.TempDir()
 	if err := WriteServersDNS(dir, []string{"NL.example.com", "192.0.2.7", "de.example.com", "nl.example.com", "2001:db8::1", ""}); err != nil {

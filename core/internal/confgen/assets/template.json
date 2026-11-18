@@ -83,6 +83,24 @@
   "route": {
     "rules": [
       {
+        "_strelka": "direct-early",
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "rule_set": "direct"
+          },
+          {
+            "port": 53,
+            "invert": true
+          }
+        ],
+        "outbound": "direct"
+      },
+      {
         "action": "sniff"
       },
       {

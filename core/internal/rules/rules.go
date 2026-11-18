@@ -172,9 +172,70 @@ func Defaults() Set {
 	return s
 }
 
+// addition is an entry the built-in lists gained after people already had
+// lists of their own.
+type addition struct{ list, kind, value string }
+
+// additions are given to an existing install once each, on the first start
+// of the version that brought them, so that one the user has removed since
+// stays removed. A fresh install has them among its defaults already. Only
+// ever append: an install remembers how many it has taken (additionsFile).
+var additions = []addition{
+	// A game booster keeps its own routes to its own servers. Through the
+	// VPN that would be two detours in a row; direct, it also skips the
+	// sniffer's wait, which its protocol (the server speaks first) would
+	// sit out on every new connection.
+	{TagDirect, proto.KindProcess, "ExitLag.exe"},
+	{TagDirect, proto.KindProcess, "exitlag.exe"},
+}
+
+// additionsFile records how many of additions this folder has taken.
+const additionsFile = "additions.json"
+
+type additionsMark struct {
+	Taken int `json:"taken"`
+}
+
+// WithAdditions gives s the additions from the from-th on. One whose value
+// is already in either list is left alone: in the other list it is the
+// user's choice.
+func WithAdditions(s Set, from int) Set {
+	for _, a := range additions[min(max(from, 0), len(additions)):] {
+		if slices.Contains(*field(&s.VPN, a.kind), a.value) || slices.Contains(*field(&s.Direct, a.kind), a.value) {
+			continue
+		}
+		f := field(s.list(a.list), a.kind)
+		*f = append(*f, a.value)
+	}
+	tidy(&s.VPN)
+	tidy(&s.Direct)
+	return s
+}
+
+func readTaken(dir string) int {
+	raw, err := os.ReadFile(filepath.Join(dir, additionsFile))
+	if err != nil {
+		return 0 // a folder from before the additions: none taken
+	}
+	var m additionsMark
+	if json.Unmarshal(raw, &m) != nil {
+		return 0
+	}
+	return m.Taken
+}
+
+func writeTaken(dir string) error {
+	b, err := json.Marshal(additionsMark{Taken: len(additions)})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, additionsFile), append(b, '\n'), 0o600)
+}
+
 // Ensure makes dir ready for the engine: every rule-set file the config
 // names exists. On the first run the lists come from the built-in samples;
-// later runs only put back files that went missing.
+// later runs only put back files that went missing, and give the lists what
+// the built-in ones have gained since (see additions).
 func Ensure(dir string) (Set, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Set{}, err
@@ -189,9 +250,17 @@ func Ensure(dir string) (Set, error) {
 		if s, err = Load(dir); err != nil {
 			return s, err
 		}
+		if taken := readTaken(dir); taken < len(additions) {
+			s = WithAdditions(s, taken)
+		}
 	}
 	if err := Save(dir, s); err != nil {
 		return s, err
+	}
+	if readTaken(dir) != len(additions) {
+		if err := writeTaken(dir); err != nil {
+			return s, err
+		}
 	}
 	if _, err := os.Stat(File(dir, TagServersDNS)); errors.Is(err, fs.ErrNotExist) {
 		if err := WriteServersDNS(dir, nil); err != nil {

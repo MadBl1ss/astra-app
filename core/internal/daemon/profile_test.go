@@ -639,8 +639,9 @@ func TestLegacyImport(t *testing.T) {
 	}
 	var got proto.RulesGetResult
 	r.call(proto.MethodRulesGet, nil, &got)
+	// The old lists come with what the built-in ones have gained since.
 	if strings.Join(got.VPN.Processes, " ") != "MyGame.exe" || strings.Join(got.VPN.Suffixes, " ") != "blocked.example.com" ||
-		strings.Join(got.Direct.IPs, " ") != "203.0.113.0/24" || len(got.Direct.Processes) != 0 {
+		strings.Join(got.Direct.IPs, " ") != "203.0.113.0/24" || strings.Join(got.Direct.Processes, " ") != "ExitLag.exe exitlag.exe" {
 		t.Errorf("правила после переноса: vpn=%+v direct=%+v", got.VPN, got.Direct)
 	}
 	if after := snapshotDir(t, old); after != before {
