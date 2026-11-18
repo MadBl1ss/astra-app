@@ -29,7 +29,12 @@ import (
 	"strelka/internal/store"
 )
 
-func main() { os.Exit(realMain(os.Args[1:])) }
+func main() {
+	flush := encodeOutput()
+	code := realMain(os.Args[1:])
+	flush()
+	os.Exit(code)
+}
 
 func realMain(args []string) int {
 	if len(args) == 0 {
