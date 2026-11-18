@@ -9,7 +9,10 @@
       "../../engines/libcronet.dll": "engines/libcronet.dll",
       "../../engines/xray.exe": "engines/xray.exe",
       "../../engines/licenses/sing-box-LICENSE.txt": "licenses/sing-box-LICENSE.txt",
-      "../../engines/licenses/xray-LICENSE.txt": "licenses/xray-LICENSE.txt"
+      "../../engines/licenses/xray-LICENSE.txt": "licenses/xray-LICENSE.txt",
+      "../../engines/licenses/GPL-3.0.txt": "licenses/GPL-3.0.txt",
+      "../../engines/licenses/SOURCES.txt": "licenses/SOURCES.txt",
+      "../../LICENSE": "licenses/strelka-LICENSE.txt"
     }
   }
 }

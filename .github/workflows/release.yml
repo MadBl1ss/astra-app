@@ -1,0 +1,75 @@
+# A tag v<version> (or a run by hand) builds the signed installer and puts it
+# into a draft release with its signature and latest.json. The draft is
+# published by hand: releases/latest, which installed copies ask for
+# updates, does not see drafts, so nothing reaches users before that click.
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (the content of the key file made by
+# `pnpm tauri signer generate`) and TAURI_SIGNING_PRIVATE_KEY_PASSWORD. The
+# public half is in app/src-tauri/tauri.conf.json; installed copies accept
+# only updates signed by this key.
+name: Выпуск
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Черновик выпуска
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Версия совпадает с тегом
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $v = (Get-Content -Raw app/package.json | ConvertFrom-Json).version
+          if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "Тег $env:GITHUB_REF_NAME, а в app/package.json $v" }
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - name: Тесты службы
+        working-directory: core
+        run: go test -race ./...
+        env:
+          CGO_ENABLED: '1'
+      - name: Сборка
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Нет секрета TAURI_SIGNING_PRIVATE_KEY: без подписи установленные копии обновление не примут.' }
+          ./scripts/build-installer.ps1
+      - name: Черновик
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = (Get-Content -Raw app/package.json | ConvertFrom-Json).version
+          $dir = 'app/src-tauri/target/release/bundle/nsis'
+          $setup = "$dir/Strelka_${v}_x64-setup.exe"
+          $notes = (Get-Content -Raw "$dir/latest.json" | ConvertFrom-Json).notes
+          $body = Join-Path $env:RUNNER_TEMP 'notes.md'
+          Set-Content -Encoding utf8 -Path $body -Value "$notes`n`nУстановка и удаление — в README. Windows SmartScreen предупредит о неизвестном издателе: у Стрелки пока нет подписи кода."
+          gh release create "v$v" --draft --target $env:GITHUB_SHA --title "Стрелка $v" --notes-file $body $setup "$setup.sig" "$dir/latest.json"
