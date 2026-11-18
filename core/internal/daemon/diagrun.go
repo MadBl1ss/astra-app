@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -311,18 +312,54 @@ func (d *Daemon) diagLookup(ctx context.Context, host string) error {
 	return err
 }
 
-// legacyDetect looks for an old Strelka off the loop: listing processes and
+// legacyDetect looks for old Strelkas off the loop: listing processes and
 // asking the task scheduler take a moment.
 func (d *Daemon) legacyDetect(c rpcCall) (any, *proto.Error, bool) {
 	ours := []string{d.opts.Paths.Data, d.opts.Paths.Engines}
+	find := d.opts.FindLegacy
 	go func() {
-		found := legacyfind.Find(context.Background(), ours...)
+		found := find(context.Background(), ours...)
+		res := proto.LegacyDetectResult{Found: []proto.LegacyFolder{}}
+		for _, f := range found {
+			res.Found = append(res.Found, proto.LegacyFolder{Dir: f.Dir, Running: f.Running, Autostart: f.Autostart, Subs: f.Subs})
+		}
+		if len(found) > 0 {
+			res.Dir, res.Running = &found[0].Dir, found[0].Running
+		}
+		d.post(func() { c.reply <- rpcReply{result: res} })
+	}()
+	return nil, nil, true
+}
+
+// legacyRetire turns every old Strelka off: the user has agreed to it in the
+// window. The folders are found anew here rather than taken from the
+// client - the daemon stops programs, and a path from an unprivileged
+// client must not choose which.
+func (d *Daemon) legacyRetire(c rpcCall) (any, *proto.Error, bool) {
+	// The old VPN going down is a blink of the network the user asked for.
+	d.acted()
+	ours := []string{d.opts.Paths.Data, d.opts.Paths.Engines}
+	find, retire := d.opts.FindLegacy, d.opts.RetireLegacy
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		var dirs []string
+		for _, f := range find(ctx, ours...) {
+			dirs = append(dirs, f.Dir)
+		}
+		stopped, task, err := retire(ctx, dirs)
 		d.post(func() {
-			res := proto.LegacyDetectResult{Running: found.Running}
-			if found.Dir != "" {
-				res.Dir = &found.Dir
+			switch {
+			case errors.Is(err, legacyfind.ErrUnsupported):
+				c.reply <- rpcReply{err: proto.Errorf(proto.CodeUnsupported, "Старая Стрелка была только для Windows.")}
+			case err != nil:
+				d.opts.Logf("retiring the old Strelka: %v", err)
+				d.log(proto.CatSystem, proto.LevelProblem, "Старая Стрелка выключилась не до конца: "+err.Error())
+				c.reply <- rpcReply{err: proto.Errorf(proto.CodeInvalid, "Старая Стрелка выключилась не до конца: %v. Закрой её значок в трее и попробуй ещё раз.", err)}
+			default:
+				d.log(proto.CatSystem, proto.LevelInfo, fmt.Sprintf("Старая Стрелка выключена: программ остановлено — %d, автозапуск %s.", stopped, map[string]string{proto.LegacyTaskDisabled: "выключен", proto.LegacyTaskAbsent: "не найден"}[task]))
+				c.reply <- rpcReply{result: proto.LegacyRetireResult{Stopped: stopped, Task: task}}
 			}
-			c.reply <- rpcReply{result: res}
 		})
 	}()
 	return nil, nil, true

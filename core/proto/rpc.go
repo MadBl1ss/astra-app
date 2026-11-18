@@ -395,6 +395,7 @@ type DiagExportResult struct {
 const (
 	MethodDiagRun      = "diag.run"
 	MethodLegacyDetect = "legacy.detect"
+	MethodLegacyRetire = "legacy.retire"
 )
 
 // Steps of diag.run, in the order they are taken.
@@ -428,10 +429,35 @@ type DiagRunResult struct {
 	Steps []DiagStep `json:"steps"`
 }
 
-// LegacyDetectResult names the folder of an old Strelka; nil when none was
-// found. Running: its program runs right now - a VPN of its own, which the
-// new one must not be started next to.
+// LegacyDetectResult lists the folders of old Strelkas, the preferred one
+// first. Dir and Running repeat the first of them, as the method answered
+// before there could be more than one; Dir is nil when none was found.
 type LegacyDetectResult struct {
-	Dir     *string `json:"dir"`
-	Running bool    `json:"running"`
+	Dir     *string        `json:"dir"`
+	Running bool           `json:"running"`
+	Found   []LegacyFolder `json:"found"`
+}
+
+// LegacyFolder is one old Strelka. Running: its program runs right now - a
+// VPN of its own, which the new one must not be started next to. Autostart:
+// the enabled logon task starts it. Subs: the names of its subscriptions,
+// never their links.
+type LegacyFolder struct {
+	Dir       string   `json:"dir"`
+	Running   bool     `json:"running"`
+	Autostart bool     `json:"autostart"`
+	Subs      []string `json:"subs"`
+}
+
+// Values of LegacyRetireResult.Task.
+const (
+	LegacyTaskDisabled = "disabled"
+	LegacyTaskAbsent   = "absent"
+)
+
+// LegacyRetireResult is what legacy.retire did: how many programs it
+// stopped, and whether there was a logon task to turn off.
+type LegacyRetireResult struct {
+	Stopped int    `json:"stopped"`
+	Task    string `json:"task"`
 }

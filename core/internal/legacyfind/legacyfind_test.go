@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"unicode/utf16"
 )
@@ -49,28 +50,71 @@ func TestTaskDirsReadsTheFoldersOfTheAction(t *testing.T) {
 	}
 }
 
-func TestPickTakesTheFirstFolderWithSubscriptions(t *testing.T) {
+func TestCollectKeepsEveryFolderWithSubscriptionsOnce(t *testing.T) {
 	plain := t.TempDir() // a sing-box, but not a Strelka
-	old := t.TempDir()
+	downloads := t.TempDir()
+	desktop := t.TempDir()
 	ours := t.TempDir()
-	for _, dir := range []string{old, ours} {
-		if err := os.WriteFile(filepath.Join(dir, Marker), []byte("https://example.com/sub\n"), 0o600); err != nil {
+	write := func(dir, text string) {
+		if err := os.WriteFile(filepath.Join(dir, Marker), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	write(downloads, "# a comment\nklex https://example.com/a?token=1\nport https://example.com/b\n")
+	write(desktop, string(rune(0xFEFF))+"https://example.com/only")
+	write(ours, "https://example.com/ours\n")
 	os.Mkdir(filepath.Join(plain, Marker), 0o700) // a folder by that name does not count
 
-	cands := []Candidate{{Dir: ""}, {Dir: "relative"}, {Dir: plain, Running: true}, {Dir: ours, Running: true}, {Dir: old, Running: true}, {Dir: old}}
-	if got := Pick(cands, []string{ours}); got.Dir != old || !got.Running {
-		t.Errorf("Pick = %+v, want %q running", got, old)
+	cands := []Candidate{
+		{Dir: ""}, {Dir: "relative"},
+		{Dir: plain, Running: true},
+		{Dir: ours, Running: true},
+		{Dir: desktop, Running: true},
+		{Dir: downloads, Autostart: true},
+		{Dir: desktop + string(filepath.Separator)}, // the same folder spelt again
+		{Dir: downloads, Running: true},
 	}
-	if got := Pick([]Candidate{{Dir: plain}}, nil); got.Dir != "" {
+	got := Collect(cands, []string{ours})
+	want := []Folder{
+		{Dir: desktop, Running: true, Subs: []string{""}},
+		{Dir: downloads, Running: true, Autostart: true, Subs: []string{"klex", "port"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Collect =\n%+v\nwant\n%+v", got, want)
+	}
+	// The links never leave the package: only the names do.
+	for _, f := range got {
+		for _, s := range f.Subs {
+			if strings.Contains(s, "://") {
+				t.Errorf("a link in the names: %q", s)
+			}
+		}
+	}
+	if got := Collect([]Candidate{{Dir: plain}}, nil); len(got) != 0 {
 		t.Errorf("nothing to find, got %+v", got)
+	}
+}
+
+func TestTaskEnabledReadsTheTaskSetting(t *testing.T) {
+	on := strings.Replace(taskXML, "<Actions", "<Settings><Enabled>true</Enabled></Settings><Actions", 1)
+	off := strings.Replace(taskXML, "<Actions", "<Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers><Settings><Enabled>false</Enabled></Settings><Actions", 1)
+	for name, c := range map[string]struct {
+		raw  string
+		want bool
+	}{
+		"no setting is the default": {taskXML, true},
+		"on":                        {on, true},
+		"off, the trigger aside":    {off, false},
+		"not a task":                {"ERROR: The system cannot find the file specified.", false},
+	} {
+		if got := TaskEnabled([]byte(c.raw)); got != c.want {
+			t.Errorf("%s: %v", name, got)
+		}
 	}
 }
 
 // On the development machine this finds the real old Strelka; anywhere it
 // must simply not fail.
 func TestFindDoesNotFail(t *testing.T) {
-	t.Logf("old Strelka: %+v", Find(context.Background()))
+	t.Logf("old Strelkas: %+v", FindAll(context.Background()))
 }

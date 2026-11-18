@@ -23,6 +23,7 @@ import (
 	"strelka/internal/incident"
 	"strelka/internal/ipc"
 	"strelka/internal/journal"
+	"strelka/internal/legacyfind"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
 	"strelka/internal/stats"
@@ -99,6 +100,13 @@ type Options struct {
 	// real ones; tests put stand-ins here so as not to touch the network.
 	Fetch  func(ctx context.Context, url string) error
 	Lookup func(ctx context.Context, host string) error
+
+	// FindLegacy and RetireLegacy find and turn off an old Strelka
+	// (legacy.detect, legacy.retire). Nil means the real ones; tests put
+	// stand-ins here, since the real retire on a developer's machine would
+	// turn off the VPN they are working through.
+	FindLegacy   func(ctx context.Context, ours ...string) []legacyfind.Folder
+	RetireLegacy func(ctx context.Context, dirs []string) (stopped int, task string, err error)
 
 	// Logf receives the daemon's own diagnostics (English, for the console).
 	Logf func(format string, a ...any)
@@ -202,6 +210,12 @@ type Daemon struct {
 // The caller should hold the channel's listener by now, so that a second
 // daemon fails on the channel before it gets to kill the first one's engine.
 func New(opts Options) (*Daemon, error) {
+	if opts.FindLegacy == nil {
+		opts.FindLegacy = legacyfind.FindAll
+	}
+	if opts.RetireLegacy == nil {
+		opts.RetireLegacy = legacyfind.Retire
+	}
 	if opts.Logf == nil {
 		opts.Logf = func(string, ...any) {}
 	}
@@ -494,6 +508,8 @@ func (d *Daemon) dispatch(c rpcCall) (result any, err *proto.Error, later bool) 
 		return d.diagRun(c)
 	case proto.MethodLegacyDetect:
 		return d.legacyDetect(c)
+	case proto.MethodLegacyRetire:
+		return d.legacyRetire(c)
 	default:
 		return d.dispatchProfile(c)
 	}
