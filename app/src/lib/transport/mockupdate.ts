@@ -2,6 +2,8 @@
 // `?update` offers one, `?update=fail` loses the network half-way,
 // `?update=signature` fails the signature, `?update=uac` is the declined UAC
 // prompt, `?update=done` and `?update=missed` are the start after an update.
+// `?update=none` finds nothing newer and `?update=offline` cannot ask at all:
+// the button in Settings for both.
 
 import { mock as text } from '../i18n/ru';
 import type { UpdateInfo, UpdateSource } from '../update.svelte';
@@ -14,6 +16,8 @@ export function mockSource(kind: string): UpdateSource {
   return {
     async check(): Promise<UpdateInfo | null> {
       await wait(400);
+      if (kind === 'none') return null;
+      if (kind === 'offline') throw new Error('error sending request for url (https://github.com/…/latest.json)');
       return { version: text.updateVersion, date: text.updateDate, notes: text.updateNotes };
     },
     async download(progress, downloaded): Promise<void> {
