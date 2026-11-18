@@ -4,8 +4,8 @@
 
 # Стрелка
 
-**VPN-клиент для Windows, который сам решает, что пускать через VPN.**<br>
-Заблокированные сайты и нужные программы идут через сервер, всё остальное — напрямую, на полной скорости.
+**Умный VPN для Windows: включается в один клик и сам знает, что пускать через VPN.**<br>
+Списки заблокированного уже внутри — всё остальное идёт напрямую, на полной скорости.
 
 [![Выпуск](https://img.shields.io/github/v/release/MadBl1ss/strelka-app?label=%D0%B2%D1%8B%D0%BF%D1%83%D1%81%D0%BA&color=3ddc97)](https://github.com/MadBl1ss/strelka-app/releases/latest)
 [![CI](https://github.com/MadBl1ss/strelka-app/actions/workflows/ci.yml/badge.svg)](https://github.com/MadBl1ss/strelka-app/actions/workflows/ci.yml)
@@ -23,32 +23,67 @@
 
 </div>
 
-## Чем Стрелка отличается
+## Почему Стрелка
 
-Happ, INCY, Hiddify, v2rayN — хорошие универсальные клиенты: одна подписка на
-телефоне, компьютере и телевизоре, много протоколов и настроек. Стрелка
-устроена по-другому. Она только для компьютера и решает одну задачу целиком:
-**VPN, о котором не нужно думать.** Включил один раз — дальше Стрелка сама
-разводит трафик, закрывает утечки, переживает обрывы и объясняет человеческими
-словами, что случилось.
+**Включил — и забыл.** Стрелка сама разводит трафик: что заблокировано —
+через VPN, всё остальное — напрямую, без потери скорости. Ни правил
+маршрутизации, ни geo-файлов, ни конфигов.
 
-- **Раздельный туннель без настройки.** В универсальных клиентах раздельный
-  доступ — это правила маршрутизации: их составляешь сам или получаешь от
-  провайдера. В Стрелке режим «Смарт» работает сразу после установки: тысячи
-  заблокированных сайтов уже в списках, остальное идёт напрямую.
-- **Программы — мышкой, а не именем файла в конфиге.** Выбираешь из
-  запущенных и видишь каждое соединение вживую: какая программа, куда, каким
-  путём.
-- **Замок включён по умолчанию.** Фильтры в сетевом экране Windows не
-  выпускают трафик мимо VPN, пока он перезапускается или упал.
-- **Работает до входа в систему.** VPN держит служба Windows: окно можно
-  закрыть, упавший движок поднимается за секунды, права администратора нужны
-  один раз — при установке.
-- **Объясняет, а не молчит.** «Сервер не отвечает», «нет интернета» и
-  «мигнула сеть» — разные диагнозы. Уведомление приходит только о настоящей
-  проблеме и говорит, что уже сделано.
-- **Открытый код.** MIT, сборка из исходников одной командой, официальные
-  движки со сверкой контрольных сумм. Исходники клиентов Happ и INCY не опубликованы.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Готовые списки**<br>
+Тысячи сайтов, заблокированных и замедленных в России, уже внутри: YouTube,
+Instagram, X, ChatGPT, Claude, Gemini. Списки обновляются сами, а Telegram,
+WhatsApp, Discord и Spotify сразу идут через VPN.
+
+</td>
+<td width="50%" valign="top">
+
+**Умный режим «Смарт»**<br>
+Через VPN — только то, чему он нужен. Банки, Госуслуги и маркетплейсы идут
+напрямую: не ругаются на зарубежный адрес и не тратят трафик подписки. Нужно
+всё через VPN — один клик.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Один клик — и подключено**<br>
+Служба уже запущена, списки уже на диске, серверы перед стартом не
+перебираются. Кнопка просто включает VPN: без долгого ожидания и без
+запросов прав администратора.
+
+</td>
+<td valign="top">
+
+**Плавно, без переподключений**<br>
+Сервер, режим и правила меняются на лету — VPN не перезапускается. Мигнула
+сеть — Стрелка отличит это от аварии и не будет тревожить зря.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Трафик не протекает**<br>
+Весь трафик системы идёт через TUN, а замок (kill switch) в сетевом экране
+Windows не выпускает его мимо VPN, пока тот перезапускается. Упавший движок
+поднимается за секунды.
+
+</td>
+<td valign="top">
+
+**Понятно и открыто**<br>
+Главная с первого взгляда отвечает «всё ли в порядке», уведомления — только
+о настоящих проблемах и человеческими словами. Открытый код (MIT), без
+аккаунтов, рекламы и телеметрии.
+
+</td>
+</tr>
+</table>
 
 ## Возможности
 
@@ -104,12 +139,13 @@ Happ, INCY, Hiddify, v2rayN — хорошие универсальные кли
   **REALITY** и **XHTTP**), **Trojan**, **Shadowsocks**, **Hysteria2**.
 - Остаток трафика и срок подписки с предупреждением, когда они на исходе.
 - Пинг, полоска стабильности, избранное, поиск по имени, стране и адресу.
+- Сервер меняется на лету, без перезапуска VPN.
 - Подписки обновляются сами; HWID для панелей с лимитом устройств
   (Remnawave).
 
 ### Окно
 
-- Tauri 2 и Svelte 5: лёгкое окно на системном WebView2, а не Electron.
+- Tauri 2 и Svelte 5: лёгкое окно на системном WebView2.
 - Главная отвечает на «всё ли в порядке» с первого взгляда: развилка «через
   VPN / напрямую» с живыми скоростями и глобус с лучом к стране сервера.
 - Тёмная и светлая темы, значок в трее, автозапуск.
@@ -199,6 +235,22 @@ Happ, INCY, Hiddify, v2rayN — хорошие универсальные кли
 - **Конфиг собирается, а не правится**: из профиля, правил и шаблона, при
   каждом изменении заново.
 
+### Почему так быстро
+
+- **Списки уже в сборке.** Перед стартом движку нечего скачивать; свежие
+  версии списков он подтянет потом, в фоне.
+- **Без перебора серверов.** VPN сразу идёт на выбранный сервер. Проверка
+  всех серверов — отдельная кнопка, а на запасной переключает служба по
+  диагнозу, а не по одному замеру.
+- **Адреса серверов резолвятся напрямую**, а не через ещё не поднятый
+  туннель.
+- **Свободный порт каждый раз.** Порт и секрет для управления движком
+  выбираются при запуске, так что зарезервированные Windows порты не мешают.
+- **Служба уже работает** с нужными правами: клик по кнопке — просто команда
+  ей. Готовность движка она узнаёт по событию, а не по таймеру.
+- **Без перезапусков.** Сервер и режим переключаются через API движка, а
+  списки правил — это файлы, которые движок перечитывает сам.
+
 ## Сборка из исходников
 
 Нужны Go (версия — в `core/go.mod`), Node.js 24 и pnpm 11, Rust (stable) с
@@ -267,8 +319,8 @@ cd app; pnpm dev                               # окно в браузере н
 
 # Strelka
 
-**A Windows VPN client that decides on its own what goes through the VPN.**<br>
-Blocked sites and the apps you pick go through the server; everything else goes direct, at full speed.
+**A smart VPN for Windows: one click to connect, and it knows what to send through the VPN.**<br>
+Lists of blocked sites are built in — everything else goes direct, at full speed.
 
 [**Download**](https://github.com/MadBl1ss/strelka-app/releases/latest) · [Install](#install) · [How it works](#how-it-works) · [Build](#building-from-source) · [**Русский**](#стрелка)
 
@@ -281,29 +333,67 @@ while local banks and services refuse foreign IP addresses.
 
 ## Why Strelka
 
-Happ, INCY, Hiddify and v2rayN are good general-purpose clients: one
-subscription on your phone, computer and TV, many protocols, many knobs.
-Strelka is built differently. It is for the computer only and solves one job
-end to end: **a VPN you don't have to think about.** Turn it on once; from
-then on Strelka splits the traffic, closes leaks, rides out outages and tells
-you in plain words what happened.
+**Turn it on and forget it.** Strelka splits the traffic itself: what is
+blocked goes through the VPN, everything else goes direct, with no loss of
+speed. No routing rules, no geo files, no configs.
 
-- **Split tunnelling with zero setup.** In general-purpose clients split
-  access means routing rules that you write yourself or get from your
-  provider. Strelka's "Smart" mode works right after installation: thousands
-  of blocked sites are already on its lists, everything else goes direct.
-- **Apps by clicking, not by file names in a config.** Pick from running
-  programs and watch every connection live: which app, where to, which way.
-- **Kill switch on by default.** Windows Firewall filters keep traffic from
-  slipping past the VPN while it restarts or is down.
-- **Runs before you sign in.** The VPN is held by a Windows service: close
-  the window, a crashed engine is back in seconds, admin rights are needed
-  once, at install.
-- **Explains instead of staying silent.** "Server is not answering", "no
-  internet" and "the network blinked" are different diagnoses. You are only
-  notified of a real problem, together with what has already been done.
-- **Open source.** MIT, a one-command build from source, official engines
-  verified by checksum. The source of the Happ and INCY clients is not published.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Lists out of the box**<br>
+Thousands of sites blocked or throttled in Russia are already inside:
+YouTube, Instagram, X, ChatGPT, Claude, Gemini. The lists update
+themselves, and Telegram, WhatsApp, Discord and Spotify go through the VPN
+from the start.
+
+</td>
+<td width="50%" valign="top">
+
+**The Smart mode**<br>
+Only what needs the VPN goes through it. Banks, government services and
+marketplaces go direct: they don't object to a foreign address and don't eat
+your plan's traffic. Need everything through the VPN — one click.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**One click and you're connected**<br>
+The service is already running, the lists are already on disk, servers are
+not probed before the start. The button just turns the VPN on: no long wait
+and no admin prompts.
+
+</td>
+<td valign="top">
+
+**Smooth, no reconnects**<br>
+Server, mode and rules change on the fly — the VPN does not restart. The
+network blinked — Strelka tells that from an outage and doesn't raise a
+false alarm.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Nothing leaks**<br>
+All system traffic goes through TUN, and the kill switch in the Windows
+firewall keeps it from slipping past the VPN while it restarts. A crashed
+engine is back in seconds.
+
+</td>
+<td valign="top">
+
+**Clear and open**<br>
+Home tells you at a glance whether everything is fine; notifications come
+only for real problems, in plain words. Open source (MIT), no account, no
+ads, no telemetry.
+
+</td>
+</tr>
+</table>
 
 ## Features
 
@@ -357,12 +447,13 @@ you in plain words what happened.
   and **XHTTP**), **Trojan**, **Shadowsocks**, **Hysteria2**.
 - Traffic left and subscription term, with a warning before they run out.
 - Ping, a stability meter, favourites, search by name, country and address.
+- The server changes on the fly, without restarting the VPN.
 - Subscriptions update themselves; HWID for panels with a device limit
   (Remnawave).
 
 ### The window
 
-- Tauri 2 and Svelte 5: a light window on the system WebView2, not Electron.
+- Tauri 2 and Svelte 5: a light window on the system WebView2.
 - Home answers "is everything fine" at a glance: a fork "through VPN /
   direct" with live speeds and a globe with a beam to the server's country.
 - Dark and light themes, a tray icon, autostart.
@@ -441,6 +532,24 @@ Strelka talks to:
   rebuild.
 - **The config is generated, not edited**: from the profile, the rules and a
   template, anew on every change.
+
+### Why it is fast
+
+- **The lists ship with the build.** The engine has nothing to download
+  before it starts; fresh versions of the lists come later, in the
+  background.
+- **No server probing.** The VPN goes straight to the selected server.
+  Testing all servers is a separate button, and the service switches to a
+  fallback on a diagnosis, not on a single probe.
+- **Server addresses resolve directly**, not through a tunnel that is not up
+  yet.
+- **A free port every time.** The port and secret for controlling the engine
+  are picked at start, so ports reserved by Windows don't get in the way.
+- **The service is already running** with the rights it needs: a click is
+  just a command to it. It learns that the engine is ready from an event,
+  not a timer.
+- **No restarts.** Server and mode switch through the engine's API, and rule
+  lists are files the engine re-reads by itself.
 
 ## Building from source
 
