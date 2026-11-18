@@ -106,7 +106,6 @@ Happ, INCY, Hiddify, v2rayN — хорошие универсальные кли
 - Пинг, полоска стабильности, избранное, поиск по имени, стране и адресу.
 - Подписки обновляются сами; HWID для панелей с лимитом устройств
   (Remnawave).
-- Перенос подписок, правил и выбранного сервера со старой Стрелки.
 
 ### Окно
 
@@ -133,17 +132,6 @@ Happ, INCY, Hiddify, v2rayN — хорошие универсальные кли
 
 Стрелка ставится для всех пользователей компьютера: окно — в
 `C:\Program Files\Strelka`, служба `Strelka` запускается вместе с Windows.
-
-### Если стоит старая Стрелка
-
-При первом запуске новая сама найдёт
-[старую](https://github.com/MadBl1ss/strelka-sing-box) (если их несколько —
-даст выбрать папку) и предложит перенести подписки, правила и выбранный
-сервер. Старую при этом нужно выключить: при каждом запуске она останавливает
-чужие VPN, в том числе новую Стрелку. Кнопка «Перенести и подключить»
-останавливает старую, выключает её задачу в Планировщике и автозапуск
-значка. Её файлы остаются на месте: вернуться к ней можно, запустив
-`sing-box-tray.exe` из её папки.
 
 ### Обновление
 
@@ -371,8 +359,6 @@ you in plain words what happened.
 - Ping, a stability meter, favourites, search by name, country and address.
 - Subscriptions update themselves; HWID for panels with a device limit
   (Remnawave).
-- Subscriptions, rules and the selected server carry over from the old
-  Strelka.
 
 ### The window
 
@@ -399,12 +385,6 @@ Windows 10 or 11, 64-bit.
 
 Strelka is installed for all users: the window goes to
 `C:\Program Files\Strelka`, and the `Strelka` service starts with Windows.
-
-**Coming from the old Strelka?** On first start the new one finds the
-[old one](https://github.com/MadBl1ss/strelka-sing-box) and offers to move
-subscriptions, rules and the selected server, then turns the old one off: it
-stops other VPNs on every start, the new Strelka included. Its files stay in
-place.
 
 **Updates**: the window checks for a new version every few hours and shows an
 «Обновить» (Update) icon above Settings. The installer is downloaded, its
