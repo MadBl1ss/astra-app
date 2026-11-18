@@ -4,8 +4,6 @@
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 *.nsh text eol=crlf
-legacy/package/README.txt text eol=crlf
-legacy/package/subscription.txt text eol=crlf
 
 *.srs binary
 *.png binary

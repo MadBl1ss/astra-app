@@ -17,6 +17,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import { ru } from '../i18n/ru';
+  import { updates } from '../update.svelte';
 
   let { section, onselect }: { section: Section; onselect: (section: Section) => void } = $props();
 </script>
@@ -39,6 +40,13 @@
     {@render item(entry.id, entry.icon)}
   {/each}
   <span class="grow"></span>
+  {#if updates.available}
+    <!-- Not a section: it opens the dialog of the new version. -->
+    <button type="button" class="update" title={ru.update.navHint(updates.available.version)} onclick={() => updates.show()}>
+      <span class="dot-wrap"><Icon name="download" /><span class="dot" aria-hidden="true"></span></span>
+      {ru.update.nav}
+    </button>
+  {/if}
   {@render item('settings', 'settings')}
 </nav>
 
@@ -82,5 +90,26 @@
 
   .grow {
     flex: 1;
+  }
+
+  /* Seen, not shouting: full-strength text and a dot, no blinking. */
+  .update {
+    color: var(--text);
+  }
+
+  .dot-wrap {
+    position: relative;
+    display: flex;
+  }
+
+  .dot {
+    position: absolute;
+    top: -2px;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    border: 1.5px solid var(--bg);
+    border-radius: 50%;
+    background: var(--text);
   }
 </style>

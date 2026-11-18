@@ -153,6 +153,12 @@ func startRigWith(t *testing.T, paths store.Paths, script string, tweak func(*Op
 		Policy:    fastPolicy,
 		StopGrace: time.Second,
 		Logf:      t.Logf,
+		// The real retire would stop the developer's working old Strelka
+		// and switch its logon task off. A test that wants it sets its own.
+		RetireLegacy: func(context.Context, []string) (int, string, error) {
+			t.Error("legacy.retire reached the real machine")
+			return 0, "", errors.New("not in tests")
+		},
 	}
 	if tweak != nil {
 		tweak(&opts)

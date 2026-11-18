@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"strelka/internal/ipc"
 	"strelka/proto"
@@ -69,14 +70,37 @@ func findLegacyCmd(ctx context.Context, c *ipc.Client) error {
 	if err := callLong(ctx, c, proto.MethodLegacyDetect, nil, &res); err != nil {
 		return err
 	}
-	if res.Dir == nil {
+	if len(res.Found) == 0 {
 		fmt.Println("Старая Стрелка не найдена.")
 		return nil
 	}
-	if res.Running {
-		fmt.Println(*res.Dir, "(запущена)")
-		return nil
+	for _, f := range res.Found {
+		var notes []string
+		if f.Running {
+			notes = append(notes, "запущена")
+		}
+		if f.Autostart {
+			notes = append(notes, "запускается при входе")
+		}
+		names := strings.Join(f.Subs, ", ")
+		if len(f.Subs) == 1 && f.Subs[0] == "" {
+			names = "одна без названия"
+		}
+		notes = append(notes, fmt.Sprintf("подписки: %s", names))
+		fmt.Println(f.Dir, "("+strings.Join(notes, "; ")+")")
 	}
-	fmt.Println(*res.Dir)
+	return nil
+}
+
+func retireLegacyCmd(ctx context.Context, c *ipc.Client) error {
+	var res proto.LegacyRetireResult
+	if err := callLong(ctx, c, proto.MethodLegacyRetire, nil, &res); err != nil {
+		return err
+	}
+	task := "выключена"
+	if res.Task == proto.LegacyTaskAbsent {
+		task = "не найдена"
+	}
+	fmt.Printf("Старая Стрелка выключена: остановлено программ — %d, задача планировщика %s.\n", res.Stopped, task)
 	return nil
 }

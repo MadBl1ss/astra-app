@@ -3,6 +3,7 @@ import {
   PROTO,
   type Connection,
   type DiagStep,
+  type LegacyFolder,
   type LegacyImportResult,
   type Incident,
   type JournalCat,
@@ -135,9 +136,10 @@ export class MockTransport implements Transport {
   // Toasts nobody listened to yet, as the daemon keeps them.
   #held: Toast[] = [];
   #diagBusy = false;
-  #legacyDir: string | null = null;
+  #legacy: LegacyFolder[] = [];
+  #legacyStuck = false;
 
-  constructor(scenario: string, options: { still?: boolean } = {}) {
+  constructor(scenario: string, options: { still?: boolean; legacy?: string | null } = {}) {
     this.#reachable = scenario !== OFFLINE;
     this.#still = options.still ?? false;
     let state = fixture(scenario) ?? fixture('ok')!;
@@ -152,7 +154,7 @@ export class MockTransport implements Transport {
     // Like the daemon on its first run: the place is asked for at once.
     if (state.place === null && this.#reachable) setTimeout(() => this.#located(), 1500);
     if (scenario === TOASTS) this.#demoToasts();
-    if (state.servers.length === 0) this.#legacyDir = text.legacyDir;
+    if (state.servers.length === 0) this.#seedLegacy(options.legacy ?? null);
     setTimeout(() => this.#setStatus(this.#reachable ? 'connected' : 'disconnected'), 120);
     setInterval(() => this.#tick(), 1000);
   }
@@ -320,9 +322,14 @@ export class MockTransport implements Transport {
       case 'legacy.detect':
         // Only a fresh profile has an old Strelka next to it in the mock:
         // that is where the first run offers to bring it over.
-        return this.#soon(300, () => ({ dir: this.#legacyDir, running: false }));
+        return this.#soon(300, () => {
+          const found = structuredClone(this.#legacy);
+          return { dir: found[0]?.dir ?? null, running: found[0]?.running ?? false, found };
+        });
       case 'legacy.import':
         return this.#legacyImport(p.dir as string);
+      case 'legacy.retire':
+        return this.#legacyRetire();
       case 'place.detect':
         return this.#soon(700, () => this.#located());
       case 'place.set': {
@@ -873,19 +880,37 @@ export class MockTransport implements Transport {
     }
   }
 
-  /** What the old Strelka in the mock brings: two subscriptions, its rules. */
+  /**
+   * Old Strelkas next to a fresh profile, `?legacy=` picks which: two (the
+   * default, as on the development machine: one running, one started at
+   * logon), one, none, or "stuck" - two that refuse to be turned off.
+   */
+  #seedLegacy(kind: string | null): void {
+    const running: LegacyFolder = { dir: text.legacyDirRunning, running: true, autostart: false, subs: ['klex'] };
+    const atLogin: LegacyFolder = { dir: text.legacyDir, running: false, autostart: true, subs: ['klex', 'port', 'lider'] };
+    switch (kind) {
+      case 'none':
+        return;
+      case 'one':
+        this.#legacy = [{ ...atLogin, running: false, autostart: false }];
+        return;
+      case 'stuck':
+        this.#legacyStuck = true;
+    }
+    this.#legacy = [running, atLogin];
+  }
+
+  /** What an old Strelka in the mock brings: its subscriptions, its rules. */
   async #legacyImport(dir: string): Promise<LegacyImportResult> {
     const s = this.#state;
     this.#jobBusy();
-    if (!dir || dir !== this.#legacyDir) throw new RpcError(ErrorCode.invalid, text.legacyNotHere);
+    const from = this.#legacy.find((f) => f.dir === dir);
+    if (!from) throw new RpcError(ErrorCode.invalid, text.legacyNotHere);
     s.busy = 'updating_subs';
     this.#touch();
     await this.#wait(SUBS_MS);
     s.busy = null;
-    const subs = [
-      { id: `s${++this.#subSeq}`, name: 'klex', n: 8 },
-      { id: `s${++this.#subSeq}`, name: 'port', n: 5 },
-    ];
+    const subs = from.subs.map((name, i) => ({ id: `s${++this.#subSeq}`, name: name || 'sub', n: 8 - i * 3 }));
     for (const sub of subs) {
       const servers = freshServers(sub.id, sub.name, sub.n, Date.now(), this.#subSeq + sub.n);
       s.servers = [...s.servers, ...servers];
@@ -895,10 +920,23 @@ export class MockTransport implements Transport {
       ];
     }
     s.server = { selected: s.servers.find((x) => x.alive)?.id ?? null, ping: null, pingAt: null };
-    this.#legacyDir = null;
     this.#log('system', 'info', text.legacyImported(subs.length));
     this.#touch();
     return { subs: subs.length, servers: s.servers.length, rules: 24, selected: s.server.selected, mode: 'rule', failed: [] };
+  }
+
+  /** Turns the mock's old Strelkas off, as the daemon would. */
+  async #legacyRetire(): Promise<{ stopped: number; task: 'disabled' | 'absent' }> {
+    await this.#wait(900);
+    if (this.#legacyStuck) {
+      this.#log('system', 'problem', text.legacyStuck);
+      throw new RpcError(ErrorCode.invalid, text.legacyStuck);
+    }
+    const stopped = this.#legacy.filter((f) => f.running).length * 2;
+    const task = this.#legacy.some((f) => f.autostart) ? 'disabled' : 'absent';
+    this.#legacy = this.#legacy.map((f) => ({ ...f, running: false, autostart: false }));
+    this.#log('system', 'info', text.legacyRetired(stopped));
+    return { stopped, task };
   }
 
   /** Sends a toast, or keeps it for the first listener, as the daemon does. */

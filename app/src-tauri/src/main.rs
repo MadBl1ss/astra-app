@@ -2,14 +2,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //! The shell of Strelka's window. It is deliberately thin: a window, a tray
-//! icon, a window for toasts, one running copy, start at login, and a bridge
+//! icon, a window for toasts, one running copy, start at login, updates, the
+//! old Strelka's autostart entry, and a bridge
 //! that carries lines of JSON between the page and the daemon. What those
 //! lines mean is the page's business (app/src/lib), so a new daemon method
 //! needs no change here.
 
 mod bridge;
+mod legacy;
 mod toasts;
 mod tray;
+mod update;
 
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -35,6 +38,9 @@ fn main() {
         // The fallback for toasts when their own window is not wanted or
         // could not be made.
         .plugin(tauri_plugin_notification::init())
+        // New versions from GitHub releases, through update.rs: the page
+        // never calls the plugin itself.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tray::remembered())
@@ -51,10 +57,16 @@ fn main() {
             toasts::toasts_native,
             toasts::toasts_place,
             toasts::screen_busy,
+            legacy::legacy_tray_autostart,
+            legacy::legacy_tray_autostart_off,
+            update::update_check,
+            update::update_download,
+            update::update_install,
         ])
         .setup(move |app| {
             tray::build(app.handle())?;
             app.manage(bridge::start(app.handle().clone()));
+            app.manage(update::Pending::default());
             // Made here rather than in tauri.conf.json, where a failure
             // could not be caught: without it toasts go to the system.
             let native = toasts::build(app.handle());

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"strelka/internal/ipc"
+	"strelka/internal/legacyfind"
 	"strelka/proto"
 )
 
@@ -250,5 +251,65 @@ func TestLegacyDetectAnswers(t *testing.T) {
 	r.call(proto.MethodLegacyDetect, nil, &res)
 	if res.Dir != nil && strings.EqualFold(*res.Dir, r.paths.Engines) {
 		t.Errorf("нашёл свою папку: %s", *res.Dir)
+	}
+	if res.Found == nil {
+		t.Error("found: null, want a list")
+	}
+	for _, f := range res.Found {
+		if strings.EqualFold(f.Dir, r.paths.Engines) {
+			t.Errorf("нашёл свою папку: %s", f.Dir)
+		}
+	}
+}
+
+// legacy.retire works on the folders the daemon found itself, with its own
+// folders left out, and says what it did in the journal. A failure is a
+// refusal the window can show.
+func TestLegacyRetireTakesTheFoldersItFound(t *testing.T) {
+	old := legacyfind.Folder{Dir: `C:\old\strelka`, Running: true, Subs: []string{"klex"}}
+	var gotOurs, gotDirs []string
+	var fail atomic.Bool
+	r := startRigWith(t, newData(t), "ok", func(o *Options) {
+		o.FindLegacy = func(_ context.Context, ours ...string) []legacyfind.Folder {
+			gotOurs = ours
+			return []legacyfind.Folder{old}
+		}
+		o.RetireLegacy = func(_ context.Context, dirs []string) (int, string, error) {
+			gotDirs = dirs
+			if fail.Load() {
+				return 1, proto.LegacyTaskDisabled, errors.New("sing-box.exe: Access is denied.")
+			}
+			return 2, proto.LegacyTaskDisabled, nil
+		}
+	})
+
+	var det proto.LegacyDetectResult
+	r.call(proto.MethodLegacyDetect, nil, &det)
+	if det.Dir == nil || *det.Dir != old.Dir || !det.Running || len(det.Found) != 1 || det.Found[0].Subs[0] != "klex" {
+		t.Errorf("detect: %+v", det)
+	}
+
+	var res proto.LegacyRetireResult
+	if err := r.longCall(proto.MethodLegacyRetire, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Stopped != 2 || res.Task != proto.LegacyTaskDisabled {
+		t.Errorf("retire: %+v", res)
+	}
+	if len(gotDirs) != 1 || gotDirs[0] != old.Dir {
+		t.Errorf("retired %q", gotDirs)
+	}
+	if len(gotOurs) != 2 || gotOurs[0] != r.paths.Data || gotOurs[1] != r.paths.Engines {
+		t.Errorf("own folders %q", gotOurs)
+	}
+	var page proto.JournalListResult
+	r.call(proto.MethodJournalList, nil, &page)
+	if len(page.Entries) == 0 || !strings.HasPrefix(page.Entries[0].Text, "Старая Стрелка выключена: программ остановлено — 2, автозапуск выключен.") {
+		t.Errorf("журнал: %+v", page.Entries[:min(1, len(page.Entries))])
+	}
+
+	fail.Store(true)
+	if err := r.longCall(proto.MethodLegacyRetire, nil, nil); codeOf(err) != proto.CodeInvalid || !strings.Contains(err.Error(), "Access is denied") {
+		t.Errorf("failure: %v", err)
 	}
 }

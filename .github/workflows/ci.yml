@@ -1,0 +1,95 @@
+# Every push to main and every pull request: the daemon's tests on Windows
+# and Linux, the window's checks, and the installer built from a clean
+# checkout. The installer here is not signed for updates: secrets stay with
+# the release workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Служба (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - run: go vet ./...
+      # -race needs cgo; the Windows runners have MinGW's gcc on PATH.
+      - run: go test -race ./...
+        env:
+          CGO_ENABLED: '1'
+
+  app:
+    name: Окно
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm contrast
+      - run: pnpm build
+
+  installer:
+    name: Установщик
+    needs: [core, app]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - run: ./scripts/build-installer.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

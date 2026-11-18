@@ -66,6 +66,16 @@ pub struct Items {
     servers: Mutex<Vec<ServerItem>>,
 }
 
+/// Takes the icon off the taskbar and puts it back. The updater takes it
+/// down before the installer starts: the process then ends without the
+/// cleanup that would remove it, and Windows would keep a dead icon until
+/// the mouse passes over it.
+pub fn set_visible(app: &AppHandle, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(visible);
+    }
+}
+
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", LABEL_OPEN, true, None::<&str>)?;
     // Disabled until the page says the daemon is there to be told.

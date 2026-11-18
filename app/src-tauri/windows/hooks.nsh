@@ -10,7 +10,15 @@
 ; $UpdateMode, $DeleteAppDataCheckboxState are the template's own variables
 ; (installer.nsi of tauri-cli 2.12.5).
 
+; nsExec reads a program's output in the ANSI code page; strelkad prints
+; UTF-8 unless told otherwise, and its Russian lines came out as mojibake in
+; the log. The variable is inherited by every command a hook runs.
+!macro STRELKA_ANSI_OUTPUT
+  System::Call 'kernel32::SetEnvironmentVariable(t "STRELKA_OUTPUT", t "ansi")'
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
+  !insertmacro STRELKA_ANSI_OUTPUT
   ; An update or a reinstall over a running service: File would fail halfway
   ; on the locked strelkad.exe and leave a broken install.
   ${If} ${FileExists} "$INSTDIR\strelkad.exe"
@@ -25,6 +33,7 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro STRELKA_ANSI_OUTPUT
   ; The same command for the first install and every update: install updates
   ; a service that already exists.
   DetailPrint "Регистрирую службу Strelka"
@@ -43,6 +52,7 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro STRELKA_ANSI_OUTPUT
   ${If} $UpdateMode = 1
     ; Uninstalling on the way to a newer version: the service stays
     ; registered, only its files must be free.

@@ -1,0 +1,149 @@
+{
+  "proto": 1,
+  "version": "0.1.0",
+  "rev": 7,
+  "vpn": {
+    "desired": "off",
+    "phase": "off",
+    "since": null,
+    "mode": "rule",
+    "failReason": null,
+    "failText": null
+  },
+  "health": {
+    "verdict": "settling",
+    "since": null,
+    "hint": null,
+    "internet": true,
+    "network": true
+  },
+  "guard": {
+    "enabled": true,
+    "engaged": false,
+    "blocking": false,
+    "allowLan": true
+  },
+  "server": {
+    "selected": "nl-1",
+    "ping": null,
+    "pingAt": null
+  },
+  "servers": [
+    {
+      "id": "nl-1",
+      "name": "Нидерланды 1",
+      "country": "NL",
+      "sub": "s1",
+      "protocol": "vless",
+      "via": "xray",
+      "host": "nl1.example.com",
+      "favorite": true,
+      "order": 0,
+      "ping": 84,
+      "pingAt": "2026-11-12T10:14:02Z",
+      "alive": true,
+      "stats": {
+        "avg": 91,
+        "loss": 0.02,
+        "samples": 340
+      }
+    },
+    {
+      "id": "de-2",
+      "name": "Германия 2",
+      "country": "DE",
+      "sub": "s1",
+      "protocol": "vless",
+      "via": "sing-box",
+      "host": "de2.example.com",
+      "favorite": true,
+      "order": 1,
+      "ping": 61,
+      "pingAt": "2026-11-12T10:14:02Z",
+      "alive": true,
+      "stats": {
+        "avg": 70,
+        "loss": 0.01,
+        "samples": 298
+      }
+    },
+    {
+      "id": "fi-1",
+      "name": "Финляндия 1",
+      "country": "FI",
+      "sub": "s1",
+      "protocol": "trojan",
+      "via": "sing-box",
+      "host": "fi1.example.net",
+      "favorite": false,
+      "order": 0,
+      "ping": 47,
+      "pingAt": "2026-11-12T10:14:02Z",
+      "alive": true,
+      "stats": {
+        "avg": 52,
+        "loss": 0,
+        "samples": 120
+      }
+    },
+    {
+      "id": "us-1",
+      "name": "Запасной",
+      "country": null,
+      "sub": "s1",
+      "protocol": "hysteria2",
+      "via": "sing-box",
+      "host": "198.51.100.7",
+      "favorite": false,
+      "order": 0,
+      "ping": null,
+      "pingAt": null,
+      "alive": false,
+      "stats": null
+    }
+  ],
+  "subs": [
+    {
+      "id": "s1",
+      "name": "Мой провайдер",
+      "url": "https://sub.example.com/…a3f9",
+      "servers": 4,
+      "updatedAt": "2026-11-12T06:00:00Z",
+      "error": null,
+      "expireAt": "2026-12-01T00:00:00Z",
+      "usedBytes": 53687091200,
+      "totalBytes": 107374182400
+    }
+  ],
+  "traffic": {
+    "up": 0,
+    "down": 0,
+    "upTotal": 0,
+    "downTotal": 0
+  },
+  "conns": {
+    "total": 0,
+    "vpn": 0
+  },
+  "incidents": [],
+  "settings": {
+    "notify": "important",
+    "quietFullscreen": true,
+    "guard": true,
+    "allowLan": true,
+    "ipv6": "tunnel",
+    "failover": false,
+    "autoUpdateSubs": "12h",
+    "localProxyPort": 0,
+    "startOnBoot": true
+  },
+  "busy": null,
+  "place": {
+    "lat": 55.7558,
+    "lon": 37.6173,
+    "city": "Москва",
+    "country": "RU",
+    "source": "ip",
+    "at": "2026-11-12T06:00:00Z"
+  }
+}

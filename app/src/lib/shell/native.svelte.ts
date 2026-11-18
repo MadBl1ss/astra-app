@@ -9,6 +9,7 @@ import { ru } from '../i18n/ru';
 import { daemon } from '../store.svelte';
 import { theme } from '../theme.svelte';
 import { toasts } from '../toasts.svelte';
+import { updates } from '../update.svelte';
 import { describe, displayName, selectedServer, type TrayIcon } from '../view';
 import { TOASTS_EVENTS, type ActionPayload, type ShowPayload } from './toastwire';
 import { win } from './window.svelte';
@@ -127,10 +128,12 @@ async function offerAutostart(): Promise<void> {
 async function watchWindow(): Promise<void> {
   await listen<boolean>('window://shown', (event) => {
     win.shown = event.payload;
+    updates.visible(event.payload);
   });
   // Started with --hidden, the page loads into a window nobody sees.
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
   win.shown = await getCurrentWindow().isVisible();
+  updates.visible(win.shown);
 }
 
 /**
