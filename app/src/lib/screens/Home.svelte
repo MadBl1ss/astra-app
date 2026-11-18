@@ -15,6 +15,7 @@
   import type { Mode, Server, State } from '../proto';
   import { win } from '../shell/window.svelte';
   import { daemon, type PathRate } from '../store.svelte';
+  import ModeDialog from './ModeDialog.svelte';
   import {
     banner,
     countryOf,
@@ -29,7 +30,7 @@
     type RailLook,
   } from '../view';
 
-  let { state: s, onjournal }: { state: State; onjournal: () => void } = $props();
+  let { state: s, onjournal, onrules }: { state: State; onjournal: () => void; onrules: () => void } = $props();
 
   const t = ru;
   const picture = $derived(describe(s, daemon.now));
@@ -37,6 +38,7 @@
   const server = $derived(selectedServer(s));
   const guard = $derived(guardLook(s));
   const recent = $derived(daemon.journal.slice(0, 3));
+  let aboutMode = $state(false);
 
   // The two ends of the beam on the globe. The near one is what the daemon
   // found by IP or the user chose; until then, the city of the system's
@@ -218,7 +220,12 @@
       </div>
 
       <div class="group">
-        <h3>{t.quick.mode}</h3>
+        <h3>
+          {t.quick.mode}
+          <button type="button" class="about" aria-label={t.quick.modeAbout} title={t.quick.modeAbout} onclick={() => (aboutMode = true)}>
+            <Icon name="info" size={14} />
+          </button>
+        </h3>
         <Segments options={modes} value={s.vpn.mode} label={t.quick.mode} onchange={(mode) => daemon.setMode(mode)} />
       </div>
 
@@ -262,6 +269,18 @@
     {/if}
   </section>
 </div>
+
+{#if aboutMode}
+  <ModeDialog
+    mode={s.vpn.mode}
+    onmode={(mode) => daemon.setMode(mode)}
+    onrules={() => {
+      aboutMode = false;
+      onrules();
+    }}
+    onclose={() => (aboutMode = false)}
+  />
+{/if}
 
 <style>
   .home {
@@ -432,10 +451,32 @@
   }
 
   .group h3 {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 18px;
     margin-bottom: 6px;
     color: var(--muted);
     font-size: var(--fs-cap);
     font-weight: 400;
+  }
+
+  .about {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: -1px 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .about:hover {
+    background: var(--surface-2);
+    color: var(--text);
   }
 
   /* The smallest window (820x560) with an incident strip: everything still
