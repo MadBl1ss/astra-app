@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -757,5 +758,41 @@ func TestCheckTarget(t *testing.T) {
 		if got.Route != c.route || !strings.Contains(got.Because, c.because) {
 			t.Errorf("%s (весь трафик: %v): %+v, жду %s и слова «%s»", c.target, c.global, got, c.route, c.because)
 		}
+	}
+}
+
+// What a provider's bot hands out goes in as the subscription inside it.
+func TestSubsAddUnwrapsAppLinks(t *testing.T) {
+	sub := newSubServer(t, link("DE", "de.example.com"))
+	r := startRig(t, emptyData(t), "ok")
+
+	wrapped := "https://panel.example.com/redirect?link=" + url.QueryEscape("happ://add/"+sub.URL+"/sub/abc1234")
+	var added proto.SubsAddResult
+	if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: wrapped}, &added); err != nil || added.Servers != 1 {
+		t.Fatalf("ссылка из бота: %+v, %v", added, err)
+	}
+	if s := r.state().Subs[0]; !strings.HasPrefix(s.URL, sub.URL+"/…") || !strings.HasSuffix(s.URL, "1234") {
+		t.Errorf("сохранилась не ссылка подписки: %q", s.URL)
+	}
+	if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: sub.URL + "/sub/abc1234"}, nil); codeOf(err) != proto.CodeInvalid {
+		t.Errorf("та же подписка без обёртки: %v", err)
+	}
+
+	// Refused at once, with what to ask the provider for.
+	err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: "happ://crypt5/QUJDREVG"}, nil)
+	if codeOf(err) != proto.CodeInvalid || !strings.Contains(err.Error(), "обычную ссылку подписки") {
+		t.Errorf("зашифрованная ссылка Happ: %v", err)
+	}
+
+	// A page that redirects to the app: the address it led to is kept.
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "happ://add/"+sub.URL+"/real-key-9876", http.StatusFound)
+	}))
+	t.Cleanup(redirect.Close)
+	if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: redirect.URL + "/go/abc", Name: "b"}, nil); err != nil {
+		t.Fatalf("страница с переадресацией в Happ: %v", err)
+	}
+	if s := r.state().Subs[1]; !strings.HasPrefix(s.URL, sub.URL+"/…") || !strings.HasSuffix(s.URL, "9876") {
+		t.Errorf("после переадресации сохранилось %q", s.URL)
 	}
 }

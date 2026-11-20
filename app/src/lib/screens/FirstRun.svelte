@@ -6,6 +6,7 @@
   import type { LegacyFolder, LegacyImportResult } from '../proto';
   import { oldTrayAutostart, oldTrayAutostartOff } from '../shell/oldtray';
   import { daemon } from '../store.svelte';
+  import { linkKind } from '../sublink';
 
   // A profile with nothing in it: one field and one button, and an offer to
   // bring an old Strelka's subscriptions over if one is on the machine.
@@ -13,8 +14,6 @@
   let { ondone }: { ondone: () => void } = $props();
 
   const t = ru.firstRun;
-  const SUB = /^https?:\/\/\S+$/i;
-  const SERVER = /^(vless|trojan|ss|hysteria2|hy2):\/\/\S+$/i;
 
   let link = $state('');
   let error = $state<string | null>(null);
@@ -71,14 +70,16 @@
       error = t.empty;
       return;
     }
-    const isSub = SUB.test(value);
-    if (!isSub && !SERVER.test(value)) {
+    // A link made for an app (happ://add/…) is a subscription too; the
+    // daemon unwraps it or says why it cannot.
+    const kind = linkKind(value);
+    if (kind === null) {
       error = t.notLink;
       return;
     }
     step = 'adding';
     try {
-      if (isSub) await daemon.call('subs.add', { url: value });
+      if (kind === 'sub') await daemon.call('subs.add', { url: value });
       else await daemon.call('subs.addLink', { link: value });
     } catch (err) {
       error = (err as Error).message;

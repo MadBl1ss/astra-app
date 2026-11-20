@@ -25,7 +25,17 @@ type Fetched struct {
 	Title string
 	// Info is the traffic and expiry the panel reports, nil when it does not.
 	Info *UserInfo
+	// MovedTo is the address the list really came from when the server
+	// redirected to an app link (Location: happ://add/https://…); "" when
+	// it served the list itself.
+	MovedTo string
 }
+
+// listAgent is the User-Agent of the second try when a panel answered
+// "sing-box" with a whole sing-box config instead of the link list
+// (Remnawave does, when the provider set it so). Panels serve v2rayN the
+// plain list: it is the client their bots name next to the app link.
+const listAgent = "v2rayN/7.13.8"
 
 // UserInfo is the subscription-userinfo header. A nil field means the panel
 // did not say, or said "unlimited".
@@ -49,6 +59,13 @@ func deviceOS() string {
 // a stub server named "App not supported", so every request carries this
 // machine's id. The same headers are what Happ or v2RayTun would send.
 //
+// Three detours, each taken once: a redirect to an app link is unwrapped
+// and followed; a whole client config in place of the list is asked for
+// again as v2rayN, with the same device headers, so the panel still sees
+// the same device; and an address that turns out to be a web page (or a
+// short link to one, which answers apps with 404) is opened as a browser
+// would, and the subscription is taken from the page's app buttons.
+//
 // Errors are Russian texts: they end up in the subscription's "error" field.
 func Fetch(ctx context.Context, hc *http.Client, subURL, hwid string) (Fetched, error) {
 	var out Fetched
@@ -57,11 +74,98 @@ func Fetch(ctx context.Context, hc *http.Client, subURL, hwid string) (Fetched, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, FetchTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", subURL, nil)
-	if err != nil {
-		return out, errors.New("ссылка подписки записана неверно")
+	hc = stopAtApps(hc)
+
+	addr, agent, pageTried := subURL, "sing-box", false
+	for {
+		r, err := get(ctx, hc, addr, agent, hwid)
+		if !pageTried && addr == subURL && mayBePage(r, err) {
+			pageTried = true
+			found, perr := fromWebPage(ctx, hc, subURL)
+			if perr == nil {
+				addr, agent, out.MovedTo = found, "sing-box", found
+				continue
+			}
+			// A plain 404 is most likely a mistyped link: its own text is
+			// the better answer. A page with nothing on it gets the page's.
+			if err == nil {
+				err = perr
+			}
+		}
+		var st *statusError
+		if errors.As(err, &st) && out.MovedTo != "" && (st.code == http.StatusNotFound || st.code == http.StatusForbidden) {
+			// The page or the redirect worked, so the address is real. Panels
+			// that hide the device limit answer a device over it this way.
+			return out, fmt.Errorf("%w; так бывает, когда лимит устройств подписки уже занят — удали старое устройство в боте провайдера", err)
+		}
+		if err != nil {
+			return out, err
+		}
+		switch {
+		case r.appLink != "":
+			u, err := Unwrap(r.appLink)
+			if err != nil || out.MovedTo != "" {
+				return out, appLinkError(err)
+			}
+			addr, out.MovedTo = u.URL, u.URL
+			continue
+		case r.config && agent != listAgent:
+			agent = listAgent
+			continue
+		case r.config:
+			return out, errors.New("сервер подписки прислал готовые настройки другого приложения, а не список серверов")
+		}
+		out.Links, out.Title, out.Info = r.links, r.title, r.info
+		return out, nil
 	}
-	req.Header.Set("User-Agent", "sing-box")
+}
+
+// appLinkError explains a redirect to an app link Fetch could not use.
+func appLinkError(err error) error {
+	if enc := (*EncryptedError)(nil); errors.As(err, &enc) {
+		return fmt.Errorf("провайдер отдаёт её только зашифрованной для приложения %s — попроси у него обычную ссылку подписки", enc.App)
+	}
+	return errors.New("сервер подписки отправил в приложение, а не отдал подписку")
+}
+
+// mayBePage tells an answer that may come from a web page in front of the
+// subscription: the page itself, a redirect to nowhere, or 403/404 that
+// short-link services give everything but a browser.
+func mayBePage(r reply, err error) bool {
+	var st *statusError
+	if errors.As(err, &st) {
+		return st.code == http.StatusNotFound || st.code == http.StatusForbidden
+	}
+	return err == nil && r.page
+}
+
+// statusError is an error status of the subscription server.
+type statusError struct{ code int }
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("сервер подписки ответил ошибкой %d", e.code)
+}
+
+// reply is one answer of the subscription server.
+type reply struct {
+	links []string
+	title string
+	info  *UserInfo
+	// appLink is where a redirect pointed when it pointed at an app.
+	appLink string
+	// config: a whole client config (JSON) came instead of the list.
+	config bool
+	// page: an HTML page came, or a redirect without an address.
+	page bool
+}
+
+func get(ctx context.Context, hc *http.Client, addr, agent, hwid string) (reply, error) {
+	var r reply
+	req, err := http.NewRequestWithContext(ctx, "GET", addr, nil)
+	if err != nil {
+		return r, errors.New("ссылка подписки записана неверно")
+	}
+	req.Header.Set("User-Agent", agent)
 	req.Header.Set("x-hwid", hwid)
 	req.Header.Set("x-device-os", deviceOS())
 	// The old tray's value, kept on purpose: the panel has this device on
@@ -71,29 +175,68 @@ func Fetch(ctx context.Context, hc *http.Client, subURL, hwid string) (Fetched, 
 	resp, err := hc.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return out, errors.New("сервер подписки не ответил вовремя")
+			return r, errors.New("сервер подписки не ответил вовремя")
 		}
-		return out, errors.New("не удалось связаться с сервером подписки")
+		return r, errors.New("не удалось связаться с сервером подписки")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 == 3 {
+		// stopAtApps let only a redirect to an app through, or one with no
+		// address, which short links give apps they will not serve.
+		if r.appLink = resp.Header.Get("Location"); r.appLink == "" {
+			r.page = true
+		}
+		return r, nil
+	}
 	if resp.StatusCode >= 400 {
-		return out, fmt.Errorf("сервер подписки ответил ошибкой %d", resp.StatusCode)
+		return r, &statusError{resp.StatusCode}
 	}
 	if resp.Header.Get("x-hwid-max-devices-reached") == "true" {
-		return out, errors.New("лимит устройств исчерпан — удали старое устройство в боте провайдера")
+		return r, errors.New("лимит устройств исчерпан — удали старое устройство в боте провайдера")
 	}
 	if resp.Header.Get("x-hwid-not-supported") == "true" {
-		return out, errors.New("провайдер не принял это устройство")
+		return r, errors.New("провайдер не принял это устройство")
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return out, errors.New("ответ сервера подписки оборвался")
+		return r, errors.New("ответ сервера подписки оборвался")
 	}
 
-	out.Links = SplitLinks(string(body))
-	out.Title = decodeTitle(resp.Header.Get("profile-title"))
-	out.Info = ParseUserInfo(resp.Header.Get("subscription-userinfo"))
-	return out, nil
+	// A list is base64 or lines of links; neither starts with a bracket.
+	// A config does, and so does a page; the addresses in them must not
+	// pass for share links.
+	switch text := strings.TrimSpace(string(body)); {
+	case strings.HasPrefix(text, "{") || strings.HasPrefix(text, "["):
+		r.config = true
+	case strings.HasPrefix(text, "<"):
+		r.page = true
+	default:
+		r.links = SplitLinks(text)
+	}
+	r.title = decodeTitle(resp.Header.Get("profile-title"))
+	r.info = ParseUserInfo(resp.Header.Get("subscription-userinfo"))
+	return r, nil
+}
+
+// stopAtApps returns a client that stops at a redirect to an app link
+// (Location: happ://add/https://…) instead of failing on the scheme, so
+// Fetch can unwrap it. Other redirects go as before.
+func stopAtApps(hc *http.Client) *http.Client {
+	c := *hc
+	next := hc.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return http.ErrUseLastResponse
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= 10 { // the default policy
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &c
 }
 
 // SplitLinks reads the body of a subscription: a list of share links, one

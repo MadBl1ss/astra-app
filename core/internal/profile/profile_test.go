@@ -279,3 +279,58 @@ func TestMaskURL(t *testing.T) {
 		}
 	}
 }
+
+func TestAddSubKeepsTheAddressInsideAnAppLink(t *testing.T) {
+	p := New()
+	a, err := p.AddSub("https://panel.example.com/redirect?link=happ://add/https://panel.example.com/sub/abc123", "")
+	if err != nil || a.URL != "https://panel.example.com/sub/abc123" || a.Name != "panel.example.com" || !a.AutoName {
+		t.Fatalf("переадресация вокруг Happ: %+v, %v", a, err)
+	}
+	// The same address in another wrapper, or bare, is the same subscription.
+	for _, again := range []string{"happ://add/https://panel.example.com/sub/abc123", "https://panel.example.com/sub/abc123"} {
+		if _, err := p.AddSub(again, ""); !errors.Is(err, ErrExists) {
+			t.Errorf("%q второй раз: %v", again, err)
+		}
+	}
+	// The wrapper's name stands in until the panel names the subscription.
+	b, err := p.AddSub("hiddify://import/https://other.example.com/sub/x#Мой VPN", "")
+	if err != nil || b.URL != "https://other.example.com/sub/x" || b.Name != "Мой VPN" || !b.AutoName || b.Prefix != b.ID {
+		t.Fatalf("имя из обёртки: %+v, %v", b, err)
+	}
+	if _, _, err := p.ApplyFetch(b.ID, subs.Fetched{Links: links("DE").Links, Title: "Провайдер"}, false, t0); err != nil {
+		t.Fatal(err)
+	}
+	if b = p.Sub(b.ID); b.Name != "Провайдер" || b.AutoName {
+		t.Errorf("название панели не заменило имя из обёртки: %+v", b)
+	}
+	// The user's own name beats the wrapper's.
+	c, _ := p.AddSub("clash://install-config?url=https%3A%2F%2Fthird.example.com%2Fs&name=Wrapper", "lider")
+	if c.Name != "lider" || c.AutoName || c.Prefix != "lider" {
+		t.Errorf("своё имя: %+v", c)
+	}
+	var inv *Invalid
+	if _, err := p.AddSub("happ://crypt5/QUJDREVG", ""); !errors.As(err, &inv) || !strings.Contains(inv.Text, "Happ") {
+		t.Errorf("зашифрованная ссылка: %v", err)
+	}
+	if len(p.Subs) != 3 {
+		t.Errorf("подписок %d, а должно быть 3", len(p.Subs))
+	}
+}
+
+func TestMoveSubFollowsTheRedirect(t *testing.T) {
+	p := New()
+	a, _ := p.AddSub("https://go.example.com/r/abc", "")
+	b, _ := p.AddSub("https://panel.example.com/sub/b", "mine")
+	if err := p.MoveSub(a.ID, "https://panel.example.com/sub/a"); err != nil {
+		t.Fatal(err)
+	}
+	if a = p.Sub(a.ID); a.URL != "https://panel.example.com/sub/a" || a.Name != "panel.example.com" || !a.AutoName {
+		t.Errorf("после переадресации: %+v", a)
+	}
+	if err := p.MoveSub(a.ID, b.URL); !errors.Is(err, ErrExists) {
+		t.Errorf("адрес другой подписки: %v", err)
+	}
+	if err := p.MoveSub(b.ID, "https://panel.example.com/sub/b2"); err != nil || p.Sub(b.ID).Name != "mine" {
+		t.Errorf("своё имя не должно меняться: %+v, %v", p.Sub(b.ID), err)
+	}
+}

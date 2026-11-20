@@ -5,10 +5,13 @@
   import Field from '../../components/Field.svelte';
   import { ru } from '../../i18n/ru';
   import { daemon } from '../../store.svelte';
+  import { linkKind } from '../../sublink';
 
-  // One field takes either kind of link: a subscription (https://…) is
-  // downloaded right away, a single server (vless://…) is added as is. What
-  // the daemon objects to is shown under the field, in its own words.
+  // One field takes either kind of link: a single server (vless://…) is
+  // added as is, anything else is a subscription, downloaded right away —
+  // https://… or a link a provider made for its app (happ://add/…), which
+  // the daemon unwraps. What the daemon objects to is shown under the
+  // field, in its own words.
   let { onclose, onadded }: { onclose: () => void; onadded: (id: string) => void } = $props();
 
   const t = ru.addDialog;
@@ -18,7 +21,7 @@
   let busy = $state(false);
   let input: HTMLInputElement | undefined = $state();
 
-  const isSub = $derived(/^https?:\/\//i.test(link.trim()));
+  const isSub = $derived(linkKind(link) === 'sub');
 
   async function submit(): Promise<void> {
     const value = link.trim();
@@ -29,11 +32,13 @@
     error = null;
     busy = true;
     try {
-      if (isSub) {
-        const res = await daemon.call('subs.add', name.trim() ? { url: value, name: name.trim() } : { url: value });
+      // Not a link at all goes to subs.add too: its refusal explains what a
+      // subscription link looks like, apps' links included.
+      if (linkKind(value) === 'server') {
+        const res = await daemon.call('subs.addLink', { link: value });
         onadded(res.id);
       } else {
-        const res = await daemon.call('subs.addLink', { link: value });
+        const res = await daemon.call('subs.add', name.trim() ? { url: value, name: name.trim() } : { url: value });
         onadded(res.id);
       }
       onclose();
