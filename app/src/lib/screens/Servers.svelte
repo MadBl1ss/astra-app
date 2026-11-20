@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Button from '../components/Button.svelte';
   import Dialog from '../components/Dialog.svelte';
   import Empty from '../components/Empty.svelte';
@@ -13,6 +13,7 @@
   import type { MenuItem } from '../components/Menu.svelte';
   import { ru } from '../i18n/ru';
   import type { Server, State, Sub } from '../proto';
+  import { freshIn, progressOf, type Round } from '../rounds';
   import { favoritesOf, groupServers, moved, pingOf, subFacts, type Group } from '../servers';
   import { daemon } from '../store.svelte';
   import { displayName } from '../view';
@@ -124,11 +125,60 @@
   // ---- what is going on ----
 
   const busy = $derived(s.busy === 'testing' || s.busy === 'updating_subs' ? s.busy : null);
-  const canTest = $derived(s.vpn.phase === 'on' && s.servers.length > 0);
+  // With the VPN on the test goes through it; off or failed, the daemon
+  // brings an engine of its own. Only a VPN on its way up or down waits.
+  const phaseLets = $derived(s.vpn.phase === 'on' || s.vpn.phase === 'off' || s.vpn.phase === 'failed');
+  const canTest = $derived(phaseLets && s.servers.length > 0 && busy === null);
+  const testNote = $derived(
+    s.test ? t.testStopNote : !phaseLets ? t.testWait : s.vpn.phase === 'on' ? t.testViaVpn(s.servers.length) : t.testWithoutVpn(s.servers.length),
+  );
 
   function testAll(): void {
-    void daemon.rpc('server.test', {});
+    // Top to bottom as the list stands, search or not: the groups on top
+    // answer first.
+    const ids = groupServers(s, favorites, '').flatMap((g) => g.servers.map((x) => x.id));
+    void daemon.rpc('server.test', ids.length > 0 ? { ids } : {});
   }
+
+  function stopTest(): void {
+    void daemon.rpc('server.testStop', undefined);
+  }
+
+  // ---- the test as it goes ----
+
+  // The round outlives State.test by LINGER_MS: its outcome stays on the
+  // groups and under the header long enough to be read, then fades.
+  const LINGER_MS = 4000;
+  let round = $state<Round | null>(null);
+  $effect(() => {
+    const test = s.test;
+    const ids = test ? s.servers.filter((x) => x.check !== null).map((x) => x.id) : [];
+    untrack(() => {
+      if (test) {
+        if (!round || round.started !== test.started || round.ended !== null) {
+          round = { started: test.started, own: test.own, ids: new Set(ids), ended: null };
+        }
+      } else if (round && round.ended === null) {
+        round = { ...round, ended: Date.now() };
+      }
+    });
+  });
+  $effect(() => {
+    if (round?.ended == null) return;
+    const timer = setTimeout(() => (round = null), LINGER_MS);
+    return () => clearTimeout(timer);
+  });
+
+  /** The line under the header: the daemon's numbers live, the outcome after. */
+  const overall = $derived.by(() => {
+    if (s.test) {
+      const { stage, own, done, total, alive } = s.test;
+      return { preparing: stage === 'preparing', own, done, total, alive, ended: false };
+    }
+    const p = progressOf(s.servers, round);
+    if (!round || !p) return null;
+    return { preparing: false, own: round.own, done: p.done, total: p.total, alive: p.alive, ended: true };
+  });
 
   function updateAll(): void {
     void daemon.rpc('subs.update', {});
@@ -192,12 +242,17 @@
     <h1>{ru.nav.servers}</h1>
     <div class="tools">
       <Field label={t.search} hideLabel icon="search" placeholder={t.searchPlaceholder} bind:value={query} width="210px" />
-      <Hint text={canTest ? t.testingNote(s.servers.length) : t.testNeedsVpn} side="bottom">
+      <Hint text={testNote} side="bottom">
         {#snippet children(describedby)}
           <span aria-describedby={describedby}>
-            <Button icon="pulse" busy={busy === 'testing'} disabled={!canTest || busy !== null} onclick={testAll}>
-              {busy === 'testing' ? t.testing : t.testAll}
-            </Button>
+            {#if s.test}
+              <Button icon="halt" onclick={stopTest}>
+                {t.testStop}
+                <span class="count">{s.test.done}/{s.test.total}</span>
+              </Button>
+            {:else}
+              <Button icon="pulse" disabled={!canTest} onclick={testAll}>{t.testAll}</Button>
+            {/if}
           </span>
         {/snippet}
       </Hint>
@@ -207,7 +262,30 @@
       <Button icon="plus" onclick={() => (dialog = { kind: 'add' })}>{t.add}</Button>
     </div>
   </header>
-  <div class="progress" class:on={busy !== null} aria-hidden="true"></div>
+  <div
+    class="progress"
+    class:on={busy === 'updating_subs' || overall?.preparing}
+    class:ended={overall?.ended}
+    aria-hidden="true"
+  >
+    {#if overall && !overall.preparing}
+      <span class="fill" class:full={overall.ended && overall.done === overall.total} style:width="{overall.total ? (overall.done / overall.total) * 100 : 0}%"></span>
+    {/if}
+  </div>
+  {#if overall}
+    <p class="testline" class:ended={overall.ended}>
+      {#if overall.preparing}
+        <span>{t.testPreparing}</span>
+      {:else if overall.ended}
+        <span role="status">{overall.done === overall.total ? t.testFinished(overall.alive, overall.total) : t.testHalted(overall.done, overall.total)}</span>
+      {:else}
+        <span class="num">{t.testProgress(overall.done, overall.total)}</span>
+        <span class="sep" aria-hidden="true">·</span>
+        <span class="num">{t.testAlive(overall.alive)}</span>
+      {/if}
+      <span class="via">{overall.own ? t.testOwn : t.testThroughVpn}</span>
+    </p>
+  {/if}
 
   <div class="list" onpointermove={moveDrag} onpointerup={endDrag} onpointercancel={endDrag} role="presentation">
     {#if empty}
@@ -226,6 +304,7 @@
             facts={group.sub ? subFacts(group.sub, group.starred, minute) : null}
             error={group.sub?.error ?? null}
             note={group.kind === 'favorites' && !isFolded && favorites.length > 1 ? t.favoritesNote : null}
+            progress={progressOf(group.servers, round)}
             folded={isFolded}
             list={listId}
             menu={group.sub ? menuOf(group.sub) : []}
@@ -249,7 +328,8 @@
                   {server}
                   selected={server.id === s.server.selected}
                   ping={pingOf(server, s, minute)}
-                  testing={busy === 'testing'}
+                  check={server.check}
+                  fresh={freshIn(server, round)}
                   grip={group.kind === 'favorites' && !query && favorites.length > 1}
                   shift={group.kind === 'favorites' ? shiftOf(i, server.id) : 0}
                   dragging={drag?.id === server.id}
@@ -321,14 +401,106 @@
     gap: var(--s2);
   }
 
-  /* A thin moving line while a test or an update runs: their results come
-     all at once at the end, so there is no honest per-cent to show. */
+  /* A thin moving line while subscriptions update or the test's own engine
+     comes up: there is no honest per-cent for those. A test fills the line
+     as servers answer, with a light running along what is filled, and the
+     line fades with the outcome. */
   .progress {
     position: relative;
     flex: none;
     height: 2px;
     overflow: hidden;
     border-radius: 1px;
+  }
+
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--text) 55%, transparent);
+    transition: width 0.3s ease-out;
+  }
+
+  .fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--text), transparent) no-repeat;
+    background-size: 40% 100%;
+    animation: shine 1.6s ease-in-out infinite;
+  }
+
+  .fill.full,
+  .ended .fill::after {
+    animation: none;
+    background: none;
+  }
+
+  .fill.full {
+    background: color-mix(in srgb, var(--text) 55%, transparent);
+  }
+
+  @keyframes shine {
+    from {
+      background-position: -60% 0;
+    }
+    to {
+      background-position: 160% 0;
+    }
+  }
+
+  .progress.ended,
+  .testline.ended {
+    animation: linger 4s ease-in forwards;
+  }
+
+  @keyframes linger {
+    0%,
+    75% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .testline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 22px;
+    padding-top: 4px;
+    color: var(--muted);
+    font-size: var(--fs-cap);
+    animation: drop var(--slow) ease-out;
+  }
+
+  .testline.ended {
+    color: var(--text);
+  }
+
+  .num,
+  .count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .count {
+    color: var(--muted);
+  }
+
+  .via {
+    margin-left: auto;
+    padding: 0 7px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    line-height: 16px;
+  }
+
+  @keyframes drop {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
   }
 
   .progress.on::after {

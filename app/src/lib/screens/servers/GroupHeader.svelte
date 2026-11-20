@@ -2,6 +2,7 @@
   import Icon from '../../components/Icon.svelte';
   import Menu, { type MenuItem } from '../../components/Menu.svelte';
   import { ru } from '../../i18n/ru';
+  import type { Progress } from '../../rounds';
   import type { SubFacts } from '../../servers';
 
   // The head of a group: a button that folds it, how fresh the subscription
@@ -12,6 +13,7 @@
     facts = null,
     error = null,
     note = null,
+    progress = null,
     folded,
     list,
     menu = [],
@@ -21,6 +23,8 @@
     facts?: SubFacts | null;
     error?: string | null;
     note?: string | null;
+    /** How far the server test got through this group; null outside a test. */
+    progress?: Progress | null;
     folded: boolean;
     /** id of the list this header folds. */
     list: string;
@@ -31,7 +35,7 @@
   const t = ru.servers;
 </script>
 
-<div class="head">
+<div class="head" class:active={progress?.phase === 'active'}>
   <button
     type="button"
     class="fold"
@@ -43,6 +47,23 @@
     <span class="chev" class:folded><Icon name="chevron" size={14} /></span>
     <span class="title">{title}</span>
   </button>
+  {#if progress}
+    {@const p = progress}
+    {@const share = p.total ? p.done / p.total : 0}
+    <span class="test {p.phase}" class:ended={p.ended} class:none={p.phase === 'finished' && p.alive === 0}>
+      {#if p.phase === 'finished'}
+        <Icon name={p.alive === 0 ? 'alert' : 'check'} size={13} />
+        <span>{p.done < p.total ? t.groupHalted(p.alive, p.done) : t.groupDone(p.alive, p.total)}</span>
+      {:else}
+        <svg class="ring" viewBox="0 0 16 16" aria-hidden="true">
+          <circle class="track" cx="8" cy="8" r="6" />
+          <circle class="arc" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="100" stroke-dashoffset={100 - share * 100} />
+          {#if p.phase === 'active'}<circle class="comet" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="14 86" />{/if}
+        </svg>
+        <span>{p.phase === 'waiting' ? t.groupQueued : t.groupRunning(p.done, p.total)}</span>
+      {/if}
+    </span>
+  {/if}
   {#if facts}<span class="fresh">{facts.updated}</span>{/if}
   {#if menu.length > 0}<Menu label={t.subMenu(title)} items={menu} />{/if}
 </div>
@@ -81,6 +102,7 @@
 
 <style>
   .head {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--s2);
@@ -240,5 +262,110 @@
   .error :global(svg) {
     flex: none;
     margin-top: 1px;
+  }
+
+  /* The server test, group by group: a hollow ring while the group waits
+     its turn, a ring that fills as its servers answer, with a short arc
+     running round it, and a line under the header while it is being
+     tested. Then the outcome, which fades with the round. */
+  .head.active::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: -2px;
+    left: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--muted), transparent) no-repeat;
+    background-size: 30% 100%;
+    animation: run 1.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes run {
+    from {
+      background-position: -45% 0;
+    }
+    to {
+      background-position: 145% 0;
+    }
+  }
+
+  .test {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 5px;
+    color: var(--muted);
+    font-size: var(--fs-cap);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    animation: appear var(--slow) ease-out;
+  }
+
+  .test.active {
+    color: var(--text);
+  }
+
+  .test.none {
+    color: var(--bad);
+  }
+
+  .test.ended {
+    animation: linger 4s ease-in forwards;
+  }
+
+  @keyframes appear {
+    from {
+      opacity: 0;
+      transform: translateX(4px);
+    }
+  }
+
+  @keyframes linger {
+    0%,
+    75% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .ring {
+    width: 14px;
+    height: 14px;
+    transform: rotate(-90deg);
+  }
+
+  .ring circle {
+    fill: none;
+    stroke-width: 2;
+  }
+
+  .track {
+    stroke: var(--line);
+  }
+
+  .arc {
+    stroke: var(--text);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.3s ease-out;
+  }
+
+  .waiting .arc {
+    opacity: 0;
+  }
+
+  .comet {
+    stroke: var(--muted);
+    stroke-linecap: round;
+    transform-origin: 8px 8px;
+    animation: orbit 1s linear infinite;
+  }
+
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

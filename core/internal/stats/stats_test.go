@@ -5,15 +5,11 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"strelka/internal/clash"
 )
 
-func answered(ms int, at time.Time) clash.ProxyInfo {
-	return clash.ProxyInfo{Type: "VLESS", Delay: ms, Tested: at}
-}
+func answered(ms int, at time.Time) Answer { return Answer{OK: true, Ms: ms, At: at} }
 
-var silent = clash.ProxyInfo{Type: "VLESS"}
+var silent = Answer{}
 
 func TestOrderPutsFastAndSteadyFirst(t *testing.T) {
 	st := &Stats{Servers: map[string]*Stat{
@@ -39,16 +35,15 @@ func TestOrderPutsFastAndSteadyFirst(t *testing.T) {
 
 func TestRoundsBuildThePicture(t *testing.T) {
 	st := &Stats{Servers: map[string]*Stat{}}
-	pool := []string{"a-DE", "a-NL"}
 	t0 := time.Unix(1_000_000, 0)
 
 	// First round: both answered.
-	px := map[string]clash.ProxyInfo{"a-DE": answered(100, t0.Add(time.Second)), "a-NL": answered(200, t0.Add(time.Second))}
-	if !st.Round(t0, t0.Add(2*time.Second), pool, px) {
+	px := map[string]Answer{"a-DE": answered(100, t0.Add(time.Second)), "a-NL": answered(200, t0.Add(time.Second))}
+	if !st.Round(t0.Add(2*time.Second), px) {
 		t.Fatal("первые результаты не учтены")
 	}
 	// Folding the same results again adds nothing.
-	if st.Round(t0, t0.Add(3*time.Second), pool, px) {
+	if st.Round(t0.Add(3*time.Second), px) {
 		t.Error("тот же результат посчитан дважды")
 	}
 	if s := st.Servers["a-DE"]; s.N != 1 || s.Avg != 100 {
@@ -57,8 +52,8 @@ func TestRoundsBuildThePicture(t *testing.T) {
 
 	// Next round, two minutes on: DE got slower, NL fell silent.
 	t1 := t0.Add(2 * time.Minute)
-	px = map[string]clash.ProxyInfo{"a-DE": answered(200, t1.Add(time.Second)), "a-NL": silent}
-	st.Round(t1, t1.Add(5*time.Second), pool, px)
+	px = map[string]Answer{"a-DE": answered(200, t1.Add(time.Second)), "a-NL": silent}
+	st.Round(t1.Add(5*time.Second), px)
 	if s := st.Servers["a-DE"]; s.N != 2 || s.Avg <= 100 || s.Avg >= 200 {
 		t.Errorf("a-DE после 100 и 200 мс: среднее %.0f, жду между ними", s.Avg)
 	}
@@ -69,8 +64,8 @@ func TestRoundsBuildThePicture(t *testing.T) {
 	// A second round right away is the same miss, not another one.
 	miss := nl.Miss
 	t2 := t1.Add(10 * time.Second)
-	px = map[string]clash.ProxyInfo{"a-DE": answered(190, t2.Add(time.Second)), "a-NL": silent}
-	st.Round(t2, t2.Add(5*time.Second), pool, px)
+	px = map[string]Answer{"a-DE": answered(190, t2.Add(time.Second)), "a-NL": silent}
+	st.Round(t2.Add(5*time.Second), px)
 	if nl.Miss != miss {
 		t.Errorf("один и тот же промах посчитан дважды: %.2f -> %.2f", miss, nl.Miss)
 	}
@@ -81,24 +76,22 @@ func TestRoundsBuildThePicture(t *testing.T) {
 }
 
 // With nobody in the round answering there is no telling a dead server from
-// a dead network.
+// a dead network; a server the round never got to is not judged at all.
 func TestNoMissesWithoutEvidenceTheNetworkWorks(t *testing.T) {
-	started := time.Unix(1_000_000, 0)
-	now := started.Add(6 * time.Second)
-	pool := []string{"a-DE", "a-NL"}
-	cases := map[string]map[string]clash.ProxyInfo{
-		"вся сеть лежит":                  {"a-DE": silent, "a-NL": silent},
-		"ответ остался от прошлого круга": {"a-DE": answered(80, started.Add(-time.Hour)), "a-NL": silent},
+	now := time.Unix(1_000_000, 0)
+	st := &Stats{Servers: map[string]*Stat{}}
+	st.Round(now, map[string]Answer{"a-DE": silent, "a-NL": silent})
+	for tag, s := range st.Servers {
+		if s.Miss > 0 {
+			t.Errorf("вся сеть лежит, а %s записан промах %.2f", tag, s.Miss)
+		}
 	}
-	for name, px := range cases {
-		st := &Stats{Servers: map[string]*Stat{}}
-		st.Round(started, now, pool, px)
-		if s := st.Servers["a-NL"]; s != nil && s.Miss > 0 {
-			t.Errorf("%s: a-NL записан промах %.2f", name, s.Miss)
-		}
-		if s := st.Servers["a-DE"]; s != nil && s.N > 0 {
-			t.Errorf("%s: a-DE засчитан ответ, которого в этом круге не было", name)
-		}
+	st.Round(now, map[string]Answer{"a-DE": answered(80, now), "a-NL": silent})
+	if s := st.Servers["a-NL"]; s == nil || s.Miss <= 0 {
+		t.Errorf("a-DE ответил, значит сеть есть, а промах a-NL не записан: %+v", s)
+	}
+	if _, ok := st.Servers["a-FI"]; ok {
+		t.Error("сервер, до которого проверка не дошла, попал в статистику")
 	}
 }
 

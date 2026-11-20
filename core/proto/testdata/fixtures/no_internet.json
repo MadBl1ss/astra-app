@@ -46,7 +46,8 @@
         "avg": 91,
         "loss": 0.02,
         "samples": 340
-      }
+      },
+      "check": null
     },
     {
       "id": "de-2",
@@ -65,7 +66,8 @@
         "avg": 70,
         "loss": 0.01,
         "samples": 298
-      }
+      },
+      "check": null
     },
     {
       "id": "fi-1",
@@ -84,7 +86,8 @@
         "avg": 52,
         "loss": 0,
         "samples": 120
-      }
+      },
+      "check": null
     },
     {
       "id": "us-1",
@@ -99,7 +102,8 @@
       "ping": null,
       "pingAt": null,
       "alive": false,
-      "stats": null
+      "stats": null,
+      "check": null
     }
   ],
   "subs": [
@@ -138,6 +142,7 @@
     "startOnBoot": true
   },
   "busy": null,
+  "test": null,
   "place": {
     "lat": 55.7558,
     "lon": 37.6173,

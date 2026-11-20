@@ -95,7 +95,13 @@ const STOP_MS = 300;
 const SETTLE_MS = 700;
 const CONFIRM_DOWN_MS = 1800;
 const SUBS_MS = 1500;
-const TEST_MS = 2500;
+// A server test: the own engine's start, then each server on its own, as
+// many at a time as the daemon does. A dead server holds its slot the
+// longest, as the real one holds it for the whole timeout.
+const PREPARE_MS = 800;
+const TEST_WORKERS = 16;
+const TEST_ALIVE_MS = [250, 1300] as const;
+const TEST_DEAD_MS = 3000;
 
 // What the direct path carries in the fake world, bytes per second.
 const DIRECT = { down: 4_400_000, up: 245_000 };
@@ -249,7 +255,10 @@ export class MockTransport implements Transport {
         this.#select(p.id as string);
         return {};
       case 'server.test':
-        return this.#test();
+        return this.#test(p.ids as string[] | undefined);
+      case 'server.testStop':
+        this.#endTest(text.testStopped);
+        return {};
       case 'server.favorite':
         this.#favorite(p.id as string, p.favorite as boolean);
         return {};
@@ -362,6 +371,9 @@ export class MockTransport implements Transport {
   #start(): void {
     const s = this.#state;
     if (s.servers.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
+    // A test on its own engine gives way to the tunnel; one through the VPN
+    // loses its engine to the restart.
+    if (s.test) this.#endTest(text.testInterrupted(s.test.own ? text.testVpnStarting : text.testVpnRestarting));
     this.#cancelTimers();
     this.#closeIncidents(VPN_INCIDENTS, 'close');
     s.vpn = { ...s.vpn, desired: 'on', phase: 'starting', since: null, failReason: null, failText: null };
@@ -383,6 +395,7 @@ export class MockTransport implements Transport {
 
   #stop(): void {
     const s = this.#state;
+    if (s.test && !s.test.own) this.#endTest(text.testInterrupted(text.testVpnStopping));
     this.#cancelTimers();
     this.#closeIncidents(VPN_INCIDENTS, 'close');
     if (s.vpn.phase === 'off') {
@@ -490,32 +503,110 @@ export class MockTransport implements Transport {
     if (this.#state.busy === 'testing') throw new RpcError(ErrorCode.busy, text.testBusy);
   }
 
-  #test(): object {
+  // The run under way; a stop or a newer run replaces it, and its timers go
+  // with it.
+  #testRun: { timers: Set<ReturnType<typeof setTimeout>> } | null = null;
+
+  #test(ids?: string[]): object {
     const s = this.#state;
     this.#jobBusy();
-    if (s.vpn.phase !== 'on') throw new RpcError(ErrorCode.invalid, text.testNeedsVpn);
     if (s.servers.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
+    if (s.vpn.phase === 'starting' || s.vpn.phase === 'recovering') throw new RpcError(ErrorCode.busy, text.testWhileStarting);
+    if (s.vpn.phase === 'stopping') throw new RpcError(ErrorCode.busy, text.testWhileStopping);
+    const pool = ids && ids.length > 0 ? [...new Set(ids)] : this.#listOrder();
+    for (const id of pool) {
+      if (!s.servers.some((x) => x.id === id)) throw new RpcError(ErrorCode.notFound, text.noSuchServer);
+    }
+    const own = s.vpn.phase !== 'on';
+    const run = { timers: new Set<ReturnType<typeof setTimeout>>() };
+    this.#testRun = run;
     s.busy = 'testing';
+    const test = { started: now(), stage: own ? 'preparing' : 'testing', own, total: pool.length, done: 0, alive: 0 } as const;
+    s.test = { ...test };
+    const inRound = new Set(pool);
+    for (const x of s.servers) x.check = inRound.has(x.id) ? 'queued' : null;
     this.#touch();
-    this.#later(TEST_MS, () => {
-      let answered = 0;
-      for (const x of s.servers) {
+
+    const later = (ms: number, fn: () => void) => {
+      const timer = setTimeout(() => {
+        run.timers.delete(timer);
+        if (this.#testRun === run) fn();
+      }, ms);
+      run.timers.add(timer);
+    };
+    const queue = [...pool];
+    let running = 0;
+    const next = (): void => {
+      const id = queue.shift();
+      if (id === undefined) {
+        if (running === 0) this.#endTest(null);
+        return;
+      }
+      const x = s.servers.find((y) => y.id === id);
+      if (!x) return next();
+      running++;
+      x.check = 'running';
+      this.#touch();
+      // The fake world: a server that answered before answers again.
+      const answers = x.alive && x.ping !== null;
+      const [lo, hi] = TEST_ALIVE_MS;
+      later(answers ? lo + Math.random() * (hi - lo) : TEST_DEAD_MS, () => {
+        running--;
+        x.check = 'done';
         x.pingAt = now();
-        if (x.alive && x.ping !== null) {
-          answered++;
-          if (!this.#still) x.ping = Math.max(8, Math.round(x.ping * (0.9 + Math.random() * 0.2)));
-          x.stats = x.stats
-            ? { ...x.stats, samples: x.stats.samples + 1 }
-            : { avg: x.ping, loss: 0, samples: 1 };
+        s.test!.done++;
+        if (answers) {
+          s.test!.alive++;
+          if (!this.#still) x.ping = Math.max(8, Math.round(x.ping! * (0.9 + Math.random() * 0.2)));
+          x.stats = x.stats ? { ...x.stats, samples: x.stats.samples + 1 } : { avg: x.ping!, loss: 0, samples: 1 };
         } else if (x.stats) {
           x.stats = { ...x.stats, samples: x.stats.samples + 1 };
         }
-      }
-      s.busy = null;
-      this.#log('server', 'info', text.testDone(answered, s.servers.length));
-      this.#touch();
-    });
+        this.#touch();
+        next();
+      });
+    };
+    const begin = () => {
+      for (let i = 0; i < Math.min(TEST_WORKERS, pool.length); i++) next();
+    };
+    if (own) {
+      later(PREPARE_MS, () => {
+        s.test!.stage = 'testing';
+        this.#touch();
+        begin();
+      });
+    } else {
+      begin();
+    }
     return {};
+  }
+
+  /** The window's order: favourites, each subscription, servers by link. */
+  #listOrder(): string[] {
+    const s = this.#state;
+    const out = s.servers
+      .filter((x) => x.favorite)
+      .sort((a, b) => a.order - b.order)
+      .map((x) => x.id);
+    for (const sub of s.subs) out.push(...s.servers.filter((x) => x.sub === sub.id && !x.favorite).map((x) => x.id));
+    out.push(...s.servers.filter((x) => !out.includes(x.id)).map((x) => x.id));
+    return out;
+  }
+
+  /** Ends the run; lead is null for one that got through every server. */
+  #endTest(lead: string | null): void {
+    const s = this.#state;
+    const run = this.#testRun;
+    if (!run || !s.test) return;
+    for (const timer of run.timers) clearTimeout(timer);
+    this.#testRun = null;
+    const { done, total, alive } = s.test;
+    if (lead === null) this.#log('server', 'info', text.testDone(alive, total));
+    else this.#log('server', 'info', done > 0 ? text.testCounted(lead, done, total, alive) : lead);
+    s.test = null;
+    if (s.busy === 'testing') s.busy = null;
+    for (const x of s.servers) x.check = null;
+    this.#touch();
   }
 
   #favorite(id: string, favorite: boolean): void {
@@ -642,6 +733,7 @@ export class MockTransport implements Transport {
       pingAt: null,
       alive: false,
       stats: null,
+      check: null,
     };
     s.servers = [...s.servers, server];
     this.#log('server', 'info', text.linkAdded(label));

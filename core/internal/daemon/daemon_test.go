@@ -584,7 +584,7 @@ func TestErrorsAreCodedAndWorded(t *testing.T) {
 	check(proto.MethodModeSet, map[string]string{"mode": "всё"}, proto.CodeInvalidParams)
 	check(proto.MethodModeSet, nil, proto.CodeInvalidParams)
 	check(proto.MethodServerSelect, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)
-	check(proto.MethodServerTest, nil, proto.CodeInvalid) // VPN is off
+	check(proto.MethodServerTest, proto.ServerTestParams{IDs: []string{"нет-такого"}}, proto.CodeNotFound)
 	check(proto.MethodServerRemove, proto.IDParams{ID: "нет-такого"}, proto.CodeNotFound)
 	check(proto.MethodSubsAdd, proto.SubsAddParams{URL: "не ссылка"}, proto.CodeInvalid)
 	check(proto.MethodSubsAddLink, proto.SubsAddLinkParams{Link: "vmess://abc"}, proto.CodeInvalid)

@@ -360,3 +360,54 @@ func lastLine(out []byte) string {
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
 }
+
+// BuildProbe assembles the config of an engine that only tests servers: the
+// servers, the selector over them and "direct", the Clash API to ask, and
+// nothing else. No inbounds and no TUN, so it takes no traffic of anyone's;
+// no cache file and no rule sets, so it shares no file with the VPN's
+// engine. It answers delay tests while the VPN is off, and the user may
+// switch the VPN on meanwhile without the two getting in each other's way.
+func BuildProbe(servers []Server, controller, secret string) ([]byte, error) {
+	if len(servers) == 0 {
+		return nil, ErrNoServers
+	}
+	tags := make([]any, 0, len(servers))
+	outbounds := []any{nil} // the selector goes first, filled in below
+	for _, s := range servers {
+		tags = append(tags, s.ID)
+		if s.XrayPort > 0 {
+			outbounds = append(outbounds, xray.SocksTo(s.ID, s.XrayPort))
+			continue
+		}
+		if len(s.Outbound) == 0 {
+			return nil, fmt.Errorf("server %s has no outbound", s.ID)
+		}
+		outbounds = append(outbounds, s.Outbound)
+	}
+	outbounds[0] = map[string]any{"type": "selector", "tag": SelectorTag, "outbounds": tags, "default": servers[0].ID}
+	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": DirectTag})
+	cfg := map[string]any{
+		"log": map[string]any{"level": "warn", "timestamp": true},
+		// The servers' own names are looked up by the system, as the VPN's
+		// engine does it for them (servers-dns goes to dns-direct there).
+		"dns": map[string]any{
+			"servers":  []any{map[string]any{"type": "local", "tag": "dns-direct"}},
+			"final":    "dns-direct",
+			"strategy": "ipv4_only",
+		},
+		"outbounds": outbounds,
+		"route": map[string]any{
+			"final":                   DirectTag,
+			"auto_detect_interface":   true,
+			"default_domain_resolver": "dns-direct",
+		},
+		"experimental": map[string]any{
+			"clash_api": map[string]any{"external_controller": controller, "secret": secret, "default_mode": ClashRule},
+		},
+	}
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}

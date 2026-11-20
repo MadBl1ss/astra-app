@@ -11,9 +11,11 @@ import (
 
 // fakeClash is the part of the Clash API the daemon uses, over the selector
 // found in the config the fake was started with. A server whose tag contains
-// "dead" never answers a delay test; every other answers in a time derived
-// from its tag, so tests can tell servers apart. Both can be overridden with
-// a script of answers, see /fake/script.
+// "dead" never answers a delay test, and one with "slow" does not either but
+// takes SlowFail to say so, the way a real dead server holds a test until
+// its timeout; every other answers in a time derived from its tag, so tests
+// can tell servers apart. All of it can be overridden with a script of
+// answers, see /fake/script.
 type fakeClash struct {
 	mu      sync.Mutex
 	members []string
@@ -32,6 +34,9 @@ type probe struct {
 	Time  time.Time `json:"time"`
 	Delay int       `json:"delay"`
 }
+
+// SlowFail is how long a "slow" server holds a delay test before failing it.
+const SlowFail = 300 * time.Millisecond
 
 // DelayOf is the delay the fake reports for a server.
 func DelayOf(tag string) int { return 40 + 7*len(tag) }
@@ -84,7 +89,7 @@ func (fc *fakeClash) member(tag string) bool {
 // test runs a delay test of one server. Called with the lock held.
 func (fc *fakeClash) test(tag string) (int, bool) {
 	fc.asked[tag]++
-	fail := strings.Contains(tag, "dead")
+	fail := strings.Contains(tag, "dead") || strings.Contains(tag, "slow")
 	if s := fc.scripts[tag]; len(s) > 0 {
 		fail = s[0] == "fail"
 		if len(s) > 1 { // the last answer repeats
@@ -154,6 +159,16 @@ func (fc *fakeClash) register(mux *http.ServeMux, secret string) {
 		if !fc.member(tag) && tag != "direct" && tag != "proxy" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
+		}
+		if strings.Contains(tag, "slow") && len(fc.scripts[tag]) == 0 {
+			// Waiting is done without the lock, as the real core tests many
+			// servers at once.
+			fc.mu.Unlock()
+			select {
+			case <-time.After(SlowFail):
+			case <-r.Context().Done():
+			}
+			fc.mu.Lock()
 		}
 		d, ok := fc.test(tag)
 		if !ok {

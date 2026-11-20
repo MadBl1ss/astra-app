@@ -34,6 +34,10 @@ import (
 // about to bind.
 const BasePort = 17400
 
+// ProbeBasePort is where the ports of the server test's own Xray start. It
+// may run while the VPN's helper starts up, so the two never share a port.
+const ProbeBasePort = 27400
+
 // Needs tells whether a vless/trojan link must go through Xray.
 func Needs(q url.Values) bool {
 	switch q.Get("type") {
@@ -224,6 +228,11 @@ func SocksTo(tag string, port int) map[string]any {
 // a server that is in use. free reports whether a port can be bound; ports
 // that cannot (taken, or inside a range Windows reserved) are passed over.
 func AssignPorts(tags []string, prev map[string]int, free func(port int) bool) (map[string]int, error) {
+	return AssignPortsFrom(BasePort, tags, prev, free)
+}
+
+// AssignPortsFrom is AssignPorts with the first port chosen by the caller.
+func AssignPortsFrom(base int, tags []string, prev map[string]int, free func(port int) bool) (map[string]int, error) {
 	out := make(map[string]int, len(tags))
 	taken := map[int]bool{}
 	for _, t := range tags {
@@ -232,7 +241,7 @@ func AssignPorts(tags []string, prev map[string]int, free func(port int) bool) (
 			taken[p] = true
 		}
 	}
-	port := BasePort
+	port := base
 	for _, t := range tags {
 		if _, ok := out[t]; ok {
 			continue

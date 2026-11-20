@@ -116,6 +116,7 @@ const (
 	MethodModeSet        = "mode.set"
 	MethodServerSelect   = "server.select"
 	MethodServerTest     = "server.test"
+	MethodServerTestStop = "server.testStop"
 	MethodServerFavorite = "server.favorite"
 	MethodServerReorder  = "server.reorder"
 	MethodServerRemove   = "server.remove"
@@ -142,7 +143,9 @@ type IDParams struct {
 }
 
 type ServerTestParams struct {
-	IDs []string `json:"ids,omitempty"` // empty means every server
+	// IDs are tested in this order; empty means every server, in the
+	// window's order: favourites, subscriptions, servers added by link.
+	IDs []string `json:"ids,omitempty"`
 }
 
 type ServerFavoriteParams struct {
