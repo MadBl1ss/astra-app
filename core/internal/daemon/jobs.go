@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"strelka/internal/clash"
 	"strelka/internal/confgen"
 	"strelka/internal/incident"
 	"strelka/internal/procs"
@@ -334,105 +333,6 @@ func (d *Daemon) adoptSubs(j *subsJob, res subsResult) {
 	default:
 		j.answer(nil, nil)
 	}
-}
-
-// ---- server.test ---------------------------------------------------------
-
-func (d *Daemon) serverTest(c rpcCall) (any, *proto.Error) {
-	var p proto.ServerTestParams
-	if len(c.params) > 0 {
-		if err := params(c, &p); err != nil {
-			return nil, err
-		}
-	}
-	if err := d.jobBusy(); err != nil {
-		return nil, err
-	}
-	api := d.api.Load()
-	if api == nil || !d.live.Load() {
-		return nil, proto.Errorf(proto.CodeInvalid, "Серверы проверяются через VPN. Сначала включи его.")
-	}
-	for _, id := range p.IDs {
-		if d.prof.Server(id) == nil {
-			return nil, proto.Errorf(proto.CodeNotFound, "Нет такого сервера: %s.", id)
-		}
-	}
-	pool := p.IDs
-	if len(pool) == 0 {
-		for _, s := range d.prof.Servers {
-			pool = append(pool, s.ID)
-		}
-	}
-	if len(pool) == 0 {
-		return nil, proto.Errorf(proto.CodeNoServers, "Нет ни одного сервера. Сначала добавь подписку.")
-	}
-	d.setJob(proto.BusyTesting)
-	whole := len(p.IDs) == 0
-	go func() {
-		started := time.Now()
-		px, err := testServers(api, pool, whole)
-		d.post(func() { d.adoptTest(started, pool, px, err) })
-	}()
-	return nil, nil
-}
-
-// testServers runs one round of delay tests and reads the results back.
-func testServers(api *clash.Client, pool []string, whole bool) (map[string]clash.ProxyInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if whole {
-		// The engine tests the whole group at once, several servers at a time.
-		if err := api.TestGroup(ctx, confgen.SelectorTag, clash.ProbeTimeout); err != nil {
-			return nil, err
-		}
-	} else {
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
-		for _, id := range pool {
-			wg.Add(1)
-			go func(id string) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				// A failed test is a result too; it shows up in Proxies as
-				// a server without one.
-				api.Delay(ctx, id)
-			}(id)
-		}
-		wg.Wait()
-	}
-	return api.Proxies(ctx)
-}
-
-func (d *Daemon) adoptTest(started time.Time, pool []string, px map[string]clash.ProxyInfo, err error) {
-	d.setJob("")
-	if err != nil {
-		d.opts.Logf("server test: %v", err)
-		d.log(proto.CatServer, proto.LevelProblem, "Проверка серверов не удалась: движок не ответил.")
-		return
-	}
-	now := time.Now()
-	alive := 0
-	for _, id := range pool {
-		p, known := px[id]
-		if !known {
-			continue
-		}
-		// A result from before this round is the engine's memory of an
-		// earlier one, not an answer to this test.
-		if p.Alive() && !p.Tested.Before(started.Add(-time.Second)) {
-			d.pings[id] = ping{ms: p.Delay, at: p.Tested, alive: true}
-			alive++
-		} else {
-			d.pings[id] = ping{at: now}
-		}
-	}
-	if d.stats.Round(started.Add(-time.Second), now, pool, px) {
-		d.saveStats(now)
-	}
-	d.log(proto.CatServer, proto.LevelInfo, fmt.Sprintf("Проверка серверов: отвечают %d из %d.", alive, len(pool)))
-	d.refresh()
-	d.touch()
 }
 
 // ---- rules: the slow answers ---------------------------------------------

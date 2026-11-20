@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,7 +107,7 @@ func TestProxiesReadsSelectionAndResults(t *testing.T) {
 
 // The probe must give a server longer than the 3 s that used to fail it, and
 // stay inside what sing-box parses: the per-proxy timeout is an int16.
-func TestProbeAndGroupTestRequests(t *testing.T) {
+func TestProbeRequest(t *testing.T) {
 	var seen []string
 	cl := apiStub(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.URL.Path+"?timeout="+r.URL.Query().Get("timeout"))
@@ -116,15 +117,31 @@ func TestProbeAndGroupTestRequests(t *testing.T) {
 	if err != nil || ms != 120 {
 		t.Fatalf("delay: %d, %v", ms, err)
 	}
-	if err := cl.TestGroup(ctx, "proxy", 10*time.Second); err != nil {
-		t.Fatalf("testGroup: %v", err)
-	}
-	want := []string{"/proxies/a-DE/delay?timeout=5000", "/group/proxy/delay?timeout=10000"}
-	if len(seen) != 2 || seen[0] != want[0] || seen[1] != want[1] {
-		t.Errorf("запросы:\n есть %v\n жду  %v", seen, want)
+	if want := "/proxies/a-DE/delay?timeout=5000"; len(seen) != 1 || seen[0] != want {
+		t.Errorf("запросы: %v, жду %s", seen, want)
 	}
 	if ProbeTimeout <= 3*time.Second || ProbeTimeout.Milliseconds() > 32767 {
 		t.Errorf("ProbeTimeout %v: нужен больше 3 с и в пределах int16 мс", ProbeTimeout)
+	}
+}
+
+// A server that did not answer is the core's answer; a core that is not
+// there is not an answer about any server.
+func TestUnreachableTellsADeadCoreFromADeadServer(t *testing.T) {
+	cl := apiStub(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"message":"Timeout"}`, http.StatusGatewayTimeout)
+	})
+	if _, err := cl.Delay(ctx, "a-DE"); err == nil || Unreachable(err) {
+		t.Errorf("сервер не ответил: %v, Unreachable=%v", err, Unreachable(err))
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close() // nobody listens there now
+	if _, err := New(addr, "").Delay(ctx, "a-DE"); !Unreachable(err) {
+		t.Errorf("движка нет, а ошибка не опознана: %v", err)
 	}
 }
 

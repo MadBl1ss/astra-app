@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"strelka/internal/clash"
 	"strelka/internal/store"
 )
 
@@ -61,30 +60,33 @@ func (st *Stats) Save(path string, now time.Time) error {
 	return store.SaveJSON(path, st)
 }
 
-// Round folds one finished test round into the picture. started is when the
-// round began: a result older than that is left over from an earlier round
-// and says nothing about this one. It reports whether anything changed.
+// Answer is how one server did in a test round: OK with the delay and the
+// time when it answered, OK false when it did not.
+type Answer struct {
+	OK bool
+	Ms int
+	At time.Time
+}
+
+// Round folds one test round into the picture. answers holds the servers the
+// round got to, whether they answered or not; a server it never reached is
+// not in it and is not judged. It reports whether anything changed.
 //
 // A miss only counts when somebody else in the round answered. With nobody
 // answering there is no telling a dead server from a dead network.
-func (st *Stats) Round(started, now time.Time, pool []string, px map[string]clash.ProxyInfo) bool {
-	answered := func(p clash.ProxyInfo) bool { return p.Alive() && !p.Tested.Before(started) }
+func (st *Stats) Round(now time.Time, answers map[string]Answer) bool {
 	working := false
-	for _, tag := range pool {
-		if answered(px[tag]) {
+	for _, a := range answers {
+		if a.OK {
 			working = true
 			break
 		}
 	}
 	changed := false
-	for _, tag := range pool {
-		p, known := px[tag]
-		if !known {
-			continue
-		}
+	for tag, a := range answers {
 		switch {
-		case answered(p):
-			changed = st.Answered(tag, p.Delay, p.Tested) || changed
+		case a.OK:
+			changed = st.Answered(tag, a.Ms, a.At) || changed
 		case working:
 			changed = st.Missed(tag, now) || changed
 		}

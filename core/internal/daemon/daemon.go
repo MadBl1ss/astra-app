@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -184,8 +185,10 @@ type Daemon struct {
 	xrayReady  bool
 	xrayWanted bool // the current plan has servers that go through Xray
 
-	phaseBusy string // starting | stopping
-	job       string // updating_subs | testing
+	phaseBusy string         // starting | stopping
+	job       string         // updating_subs | testing
+	test      *testRun       // the server test under way, see servertest.go
+	tests     sync.WaitGroup // its goroutine, waited for on the way out
 	autoInfo  map[string]autoListInfo
 	versions  map[string]versionInfo // engine.versions, by engine name
 
@@ -353,6 +356,14 @@ func (d *Daemon) Run(ctx context.Context, l net.Listener) error {
 
 	d.loop(ctx)
 	stopNetwork()
+	// A server test on its own engine stops that engine on its way out.
+	waitTests := make(chan struct{})
+	go func() { d.tests.Wait(); close(waitTests) }()
+	select {
+	case <-waitTests:
+	case <-time.After(10 * time.Second):
+		d.opts.Logf("shutting down: the server test did not stop its engine")
+	}
 
 	// Let the last State (phase off) reach the clients before they are cut.
 	d.srv.Drain(500 * time.Millisecond)
@@ -457,6 +468,9 @@ func (d *Daemon) loop(ctx context.Context) {
 
 func (d *Daemon) shutdown() {
 	d.live.Store(false)
+	if d.test != nil {
+		d.test.cancel()
+	}
 	d.log(proto.CatSystem, proto.LevelInfo, "Служба остановлена.")
 	d.publish()
 }
@@ -628,12 +642,18 @@ func (d *Daemon) restartEngines() {
 }
 
 func (d *Daemon) stopEngines() {
+	d.interruptTest(false, "VPN выключается")
 	d.live.Store(false)
 	d.sup.Stop()
 	d.xsup.Stop()
 }
 
 func (d *Daemon) markStarting() {
+	if d.test != nil && d.test.pub.Own {
+		d.interruptTest(true, "включается VPN")
+	} else {
+		d.interruptTest(true, "VPN перезапускается")
+	}
 	d.everOn, d.toldOn = false, false
 	d.boxReady, d.xrayReady = false, false
 	d.live.Store(false)
@@ -696,6 +716,7 @@ func (d *Daemon) onEngine(m engEvent) {
 		}
 		d.boxReady = false
 		d.live.Store(false)
+		d.interruptTest(false, "VPN неожиданно остановился")
 		d.engineDown()
 		if d.st.VPN.Phase == proto.PhaseStopping {
 			return

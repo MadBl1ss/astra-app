@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -208,13 +209,17 @@ func (cl *Client) DelayURL(ctx context.Context, tag, target string, timeout time
 	return r.Delay, err
 }
 
-// TestGroup makes the core test every member of a group at once and settle
-// the group's choice on the result. The answer is read back through
-// Proxies: a check already in flight returns an empty reply here.
-func (cl *Client) TestGroup(ctx context.Context, tag string, timeout time.Duration) error {
-	p := fmt.Sprintf("/group/%s/delay?timeout=%d&url=%s",
-		url.PathEscape(tag), timeout.Milliseconds(), url.QueryEscape(PingURL))
-	return cl.do(ctx, timeout+5*time.Second, "GET", p, nil, nil)
+// Unreachable tells a call that found nobody listening (the core is gone or
+// not up yet) from one the core answered with an error, such as a server
+// that did not answer a delay test.
+//
+// There is deliberately no group test here. sing-box's /group/{tag}/delay
+// gives its timeout to the whole group, not to each member, and tests ten at
+// a time: with a few dead servers holding their slots, the members at the end
+// of a long list are never tried and come back as silent.
+func Unreachable(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op) && op.Op == "dial"
 }
 
 // Mode reads the routing mode and the modes this core knows. A core started

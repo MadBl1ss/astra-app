@@ -32,6 +32,8 @@ func (d *Daemon) dispatchProfile(c rpcCall) (any, *proto.Error, bool) {
 		return now(d.serverRemove(c))
 	case proto.MethodServerTest:
 		return now(d.serverTest(c))
+	case proto.MethodServerTestStop:
+		return now(d.serverTestStop())
 	case proto.MethodSubsRename:
 		return now(d.subsRename(c))
 	case proto.MethodSubsRemove:
@@ -135,9 +137,19 @@ func (d *Daemon) refresh() {
 		if st := d.stats.Servers[s.ID]; st != nil && (st.N > 0 || st.Miss > 0) {
 			ps.Stats = &proto.ServerStats{Avg: int(st.Avg + 0.5), Loss: float64(int(st.Miss*100+0.5)) / 100, Samples: st.N}
 		}
+		if d.test != nil {
+			if c, ok := d.test.check[s.ID]; ok {
+				ps.Check = &c
+			}
+		}
 		servers = append(servers, ps)
 	}
 	d.st.Servers = servers
+	d.st.Test = nil
+	if d.test != nil {
+		pub := d.test.pub
+		d.st.Test = &pub
+	}
 
 	subsOut := make([]proto.Sub, 0, len(d.prof.Subs))
 	for _, s := range d.prof.Subs {
