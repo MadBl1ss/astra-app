@@ -179,27 +179,37 @@ func selectCmd(ctx context.Context, c *ipc.Client, args []string) error {
 	return call(ctx, c, proto.MethodServerSelect, proto.IDParams{ID: args[0]}, nil)
 }
 
-// testCmd starts a test round and waits until the daemon is done with it.
+// testCmd starts a test round and waits until the daemon is done with it,
+// saying how far it has got. Ctrl+C stops the round, not only the waiting.
 func testCmd(ctx context.Context, c *ipc.Client, args []string) error {
 	if err := call(ctx, c, proto.MethodServerTest, proto.ServerTestParams{IDs: args}, nil); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(2 * time.Minute)
+	said := ""
 	for {
 		st, err := getState(ctx, c)
 		if err != nil {
+			if ctx.Err() != nil {
+				stop, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				call(stop, c, proto.MethodServerTestStop, nil, nil)
+				cancel()
+			}
 			return err
 		}
-		if st.Busy == nil || *st.Busy != proto.BusyTesting {
+		if st.Test == nil {
 			printServers(st)
 			return nil
 		}
-		if time.Now().After(deadline) {
-			return errors.New("проверка серверов не закончилась за две минуты")
+		line := fmt.Sprintf("проверено %d из %d, отвечают %d", st.Test.Done, st.Test.Total, st.Test.Alive)
+		if st.Test.Stage == proto.TestPreparing {
+			line = "запускаю проверочный движок: VPN выключен"
+		}
+		if line != said {
+			fmt.Println(line)
+			said = line
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
 		case <-time.After(300 * time.Millisecond):
 		}
 	}
