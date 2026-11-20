@@ -174,14 +174,17 @@ func (p *Profile) CountOf(subID string) int {
 	return n
 }
 
-// CleanURL checks a subscription address and returns it trimmed.
-func CleanURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-		return "", invalid("Это не похоже на ссылку подписки. Она начинается с https:// — скопируй её целиком у своего провайдера.")
+// CleanURL checks a subscription address and returns it trimmed. A link a
+// provider made for its app (happ://add/…, a redirect page around one) is
+// unwrapped to the address inside, which is what gets kept: the wrapper
+// only says which app to open. name is what the wrapper called the
+// subscription, "" when nothing.
+func CleanURL(raw string) (clean, name string, err error) {
+	u, err := subs.Unwrap(raw)
+	if err != nil {
+		return "", "", invalid("%s", err.Error())
 	}
-	return raw, nil
+	return u.URL, u.Name, nil
 }
 
 // AddSub registers a subscription; its servers arrive with ApplyFetch. An
@@ -202,7 +205,7 @@ func (p *Profile) AddLegacySub(rawURL, prefix string) (*Sub, error) {
 }
 
 func (p *Profile) addSub(rawURL, name, prefix string, exactPrefix bool) (*Sub, error) {
-	clean, err := CleanURL(rawURL)
+	clean, wrapName, err := CleanURL(rawURL)
 	if err != nil {
 		return nil, err
 	}
@@ -215,14 +218,45 @@ func (p *Profile) addSub(rawURL, name, prefix string, exactPrefix bool) (*Sub, e
 	p.NextSub++
 	sub := Sub{ID: id, Name: name, Prefix: prefix, URL: clean}
 	if sub.Name == "" {
-		u, _ := url.Parse(clean)
-		sub.Name, sub.AutoName = u.Hostname(), true
+		// The wrapper's name beats the host, and the panel's own title
+		// still beats both: the user chose neither.
+		if wrapName = cleanName(wrapName); wrapName != "" {
+			sub.Name, sub.AutoName = wrapName, true
+		} else {
+			u, _ := url.Parse(clean)
+			sub.Name, sub.AutoName = u.Hostname(), true
+		}
 	}
 	if !exactPrefix && (sub.Prefix == "" || p.prefixTaken(sub.Prefix)) {
 		sub.Prefix = id
 	}
 	p.Subs = append(p.Subs, sub)
 	return &p.Subs[len(p.Subs)-1], nil
+}
+
+// MoveSub records the address a subscription turned out to live at: its
+// address redirected to an app link around another one. A name taken from
+// the old host follows the new one.
+func (p *Profile) MoveSub(id, rawURL string) error {
+	sub := p.Sub(id)
+	if sub == nil {
+		return ErrNotFound
+	}
+	clean, _, err := CleanURL(rawURL)
+	if err != nil {
+		return err
+	}
+	for _, s := range p.Subs {
+		if s.ID != id && s.URL == clean {
+			return ErrExists
+		}
+	}
+	if old, _ := url.Parse(sub.URL); sub.AutoName && old != nil && sub.Name == old.Hostname() {
+		u, _ := url.Parse(clean)
+		sub.Name = u.Hostname()
+	}
+	sub.URL = clean
+	return nil
 }
 
 func (p *Profile) prefixTaken(prefix string) bool {
