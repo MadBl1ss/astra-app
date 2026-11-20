@@ -92,6 +92,12 @@ func Fetch(ctx context.Context, hc *http.Client, subURL, hwid string) (Fetched, 
 				err = perr
 			}
 		}
+		var st *statusError
+		if errors.As(err, &st) && out.MovedTo != "" && (st.code == http.StatusNotFound || st.code == http.StatusForbidden) {
+			// The page or the redirect worked, so the address is real. Panels
+			// that hide the device limit answer a device over it this way.
+			return out, fmt.Errorf("%w; так бывает, когда лимит устройств подписки уже занят — удали старое устройство в боте провайдера", err)
+		}
 		if err != nil {
 			return out, err
 		}

@@ -71,6 +71,11 @@ func TestFetchFindsTheSubscriptionBehindAShortLink(t *testing.T) {
 			fmt.Fprint(w, subPage(srv.URL+"/sub/real-key"))
 		case "/landing":
 			fmt.Fprint(w, subPage(srv.URL+"/sub/real-key")) // a page for everyone
+		case "/s/full":
+			// The page is there, its panel turns this device away.
+			fmt.Fprint(w, subPage(srv.URL+"/sub/no-room"))
+		case "/sub/no-room":
+			w.WriteHeader(http.StatusNotFound)
 		case "/plain-page":
 			fmt.Fprint(w, `<!doctype html><html><body>Здесь ничего нет</body></html>`)
 		case "/sub/real-key":
@@ -107,6 +112,12 @@ func TestFetchFindsTheSubscriptionBehindAShortLink(t *testing.T) {
 	}
 	if _, err := Fetch(ctx, srv.Client(), srv.URL+"/missing", "abcdef0123456789"); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("несуществующий адрес: %v", err)
+	}
+	// The page led somewhere real and the panel said 404: most likely its
+	// device limit is taken, which some panels hide behind a 404.
+	if _, err := Fetch(ctx, srv.Client(), srv.URL+"/s/full", "abcdef0123456789"); err == nil ||
+		!strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "лимит устройств") {
+		t.Errorf("панель без места для устройства: %v", err)
 	}
 	// A page with nothing on it says it is a page.
 	if _, err := Fetch(ctx, srv.Client(), srv.URL+"/plain-page", "abcdef0123456789"); err == nil || !strings.Contains(err.Error(), "страница") {
