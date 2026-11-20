@@ -95,8 +95,12 @@ func TestServerTestReachesTheEndOfALongList(t *testing.T) {
 	first := newSubServer(t, slowLinks(30)...)
 	last := newSubServer(t, link("DE", "de.example.com"), link("NL", "nl.example.com"), link("FI", "fi.example.com"))
 	r := startRig(t, emptyData(t), "ok")
-	for name, s := range map[string]*subServer{"a": first, "b": last} {
-		if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: s.URL, Name: name}, nil); err != nil {
+	// In this order: the silent subscription first, the working one last.
+	for _, sub := range []struct {
+		name string
+		s    *subServer
+	}{{"a", first}, {"b", last}} {
+		if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: sub.s.URL, Name: sub.name}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -105,6 +109,9 @@ func TestServerTestReachesTheEndOfALongList(t *testing.T) {
 	r.waitState("конец проверки", func(st proto.State) bool { return st.Test == nil && st.Busy == nil && len(st.Servers) == 33 })
 	if !r.journalHas(proto.LevelInfo, "отвечают 3 из 33") {
 		t.Errorf("итог проверки: %+v", r.journal)
+	}
+	if r.last.Subs[1].Name != "b" {
+		t.Fatalf("подписки не в том порядке: %+v", r.last.Subs)
 	}
 	for _, s := range r.last.Servers {
 		if s.Sub == r.last.Subs[1].ID && !s.Alive {
