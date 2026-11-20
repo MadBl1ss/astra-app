@@ -11,7 +11,7 @@ import (
 
 // The same files feed the mock daemon of the app, so a field that Go drops or
 // renames here would silently diverge the two sides.
-var fixtureNames = []string{"ok", "off", "starting", "server_down", "blocked", "no_internet", "empty"}
+var fixtureNames = []string{"ok", "off", "starting", "server_down", "blocked", "no_internet", "empty", "testing"}
 
 func TestFixturesRoundTrip(t *testing.T) {
 	dir := filepath.Join("testdata", "fixtures")

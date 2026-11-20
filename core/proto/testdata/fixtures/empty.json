@@ -53,5 +53,6 @@
     "startOnBoot": true
   },
   "busy": null,
+  "test": null,
   "place": null
 }

@@ -65,6 +65,19 @@ const (
 	BusyTesting      = "testing"
 )
 
+// Values of servers[].check: where a server is in the test under way.
+const (
+	CheckQueued  = "queued"
+	CheckRunning = "running"
+	CheckDone    = "done"
+)
+
+// Values of test.stage.
+const (
+	TestPreparing = "preparing" // the test's own engine is coming up
+	TestTesting   = "testing"
+)
+
 // State is the one document the daemon broadcasts in full on every change.
 // Slices are never nil on the wire: clients index them without null checks.
 type State struct {
@@ -82,6 +95,8 @@ type State struct {
 	Incidents []Incident `json:"incidents"`
 	Settings  Settings   `json:"settings"`
 	Busy      *string    `json:"busy"`
+	// Test is the server test under way; nil when there is none.
+	Test *TestRun `json:"test"`
 	// Place is where the computer is, for the globe on the window's Home;
 	// nil while it is not known.
 	Place *Place `json:"place"`
@@ -148,6 +163,20 @@ type Server struct {
 	PingAt   *time.Time   `json:"pingAt"`
 	Alive    bool         `json:"alive"`
 	Stats    *ServerStats `json:"stats"`
+	// Check is where the server is in the test under way: queued, running,
+	// done; nil when it is not part of one.
+	Check *string `json:"check"`
+}
+
+// TestRun is the progress of a server test.
+type TestRun struct {
+	Started time.Time `json:"started"`
+	Stage   string    `json:"stage"` // preparing | testing
+	// Own: the test runs on an engine of its own, since the VPN is off.
+	Own   bool `json:"own"`
+	Total int  `json:"total"`
+	Done  int  `json:"done"`  // answered or timed out
+	Alive int  `json:"alive"` // answered
 }
 
 type ServerStats struct {
