@@ -73,8 +73,9 @@ func (d *Daemon) subsAdd(c rpcCall) (any, *proto.Error, bool) {
 	if err := d.jobBusy(); err != nil {
 		return nil, err, false
 	}
-	// Refuse what will not parse before anything is downloaded.
-	if _, err := profile.CleanURL(p.URL); err != nil {
+	// Refuse what will not parse before anything is downloaded: an
+	// encrypted Happ link is told apart here, not after half a minute.
+	if _, _, err := profile.CleanURL(p.URL); err != nil {
 		return nil, profileError(err, ""), false
 	}
 	d.startSubsJob(&subsJob{add: &p, reply: later(c)})
@@ -203,6 +204,15 @@ func (d *Daemon) runSubsJob(j *subsJob, cand *profile.Profile, settings proto.Se
 	wg.Wait()
 	now := time.Now()
 	for i, id := range ids {
+		if moved := fetched[i].MovedTo; j.add != nil && errs[i] == nil && moved != "" {
+			// A new subscription keeps the address its link led to, as a
+			// wrapped link pasted by hand does. Old ones keep theirs: the
+			// redirect is followed again next time.
+			if err := cand.MoveSub(id, moved); err != nil {
+				res.err = profileError(err, "")
+				return res
+			}
+		}
 		o := outcome{id: id, name: cand.Sub(id).Name, err: errs[i]}
 		if o.err != nil {
 			cand.FetchFailed(id, o.err, now)

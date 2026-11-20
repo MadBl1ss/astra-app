@@ -38,6 +38,7 @@ import {
   seedLongJournal,
   seedRules,
 } from './mockworld';
+import { unwrapSubLink } from './mocklinks';
 import { LinkError, Listeners, RpcError, type LinkStatus, type Transport, type Unsubscribe } from './types';
 
 // The same files core/proto checks its Go types against.
@@ -654,8 +655,18 @@ export class MockTransport implements Transport {
   async #addSub(url: string, name: string | undefined): Promise<{ id: string; servers: number }> {
     const s = this.#state;
     this.#jobBusy();
-    const clean = (url ?? '').trim();
-    if (!/^https?:\/\/\S+$/i.test(clean)) throw new RpcError(ErrorCode.invalid, text.notUrl);
+    const link = unwrapSubLink(url ?? '');
+    if (!link.ok) {
+      const why = {
+        notLink: text.notUrl,
+        noSub: text.noSubInside,
+        server: text.serverInside,
+        encrypted: 'app' in link ? text.encrypted(link.app) : '',
+        routing: 'app' in link ? text.appRouting(link.app) : '',
+      }[link.why];
+      throw new RpcError(ErrorCode.invalid, why);
+    }
+    const clean = link.url;
     if (this.#urls.has(clean)) throw new RpcError(ErrorCode.invalid, text.subExists);
     s.busy = 'updating_subs';
     this.#touch();
@@ -667,7 +678,7 @@ export class MockTransport implements Transport {
     }
     this.#urls.add(clean);
     const id = `s${++this.#subSeq}`;
-    const title = name?.trim() || text.newSubName;
+    const title = name?.trim() || link.name || text.newSubName;
     const servers = freshServers(id, `n${this.#subSeq}`, 6, Date.now(), this.#subSeq);
     s.servers = [...s.servers, ...servers];
     s.subs = [
