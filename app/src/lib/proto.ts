@@ -75,9 +75,28 @@ export interface State {
   incidents: Incident[];
   settings: Settings;
   busy: Busy | null;
+  /** The server test under way; null when there is none. */
+  test: TestRun | null;
   /** Where the computer is, for the globe on Home; null while not known. */
   place: Place | null;
 }
+
+/** Progress of a server test. */
+export interface TestRun {
+  started: string;
+  /** "preparing": the test's own engine is coming up (the VPN is off). */
+  stage: 'preparing' | 'testing';
+  /** The test runs on an engine of its own, since the VPN is off. */
+  own: boolean;
+  total: number;
+  /** Answered or timed out. */
+  done: number;
+  /** Answered. */
+  alive: number;
+}
+
+/** Where a server is in the test under way. */
+export type Check = 'queued' | 'running' | 'done';
 
 export interface Place {
   lat: number;
@@ -105,6 +124,8 @@ export interface Server {
   pingAt: string | null;
   alive: boolean;
   stats: { avg: number; loss: number; samples: number } | null;
+  /** Only while a test runs and the server is part of it. */
+  check: Check | null;
 }
 
 export interface Sub {
@@ -295,7 +316,9 @@ export interface Methods {
     params: { before?: number; limit?: number; filter?: JournalFilter };
     result: { entries: JournalEntry[]; more: boolean };
   };
+  /** ids are tested in this order; without them every server, in the list's order. */
   'server.test': { params: { ids?: string[] }; result: Empty };
+  'server.testStop': { params: undefined; result: Empty };
   'server.favorite': { params: { id: string; favorite: boolean }; result: Empty };
   'server.reorder': { params: { ids: string[] }; result: Empty };
   'server.remove': { params: { id: string }; result: Empty };

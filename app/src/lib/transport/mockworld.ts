@@ -239,6 +239,7 @@ function makeServer(
     pingAt: tested ? iso(now - Math.floor(rnd() * 30) * 60_000) : null,
     alive,
     stats: samples > 0 ? { avg: Math.round((ping ?? base * 1.4) * 1.08), loss: Math.round(loss * 100) / 100, samples } : null,
+    check: null,
   };
 }
 
