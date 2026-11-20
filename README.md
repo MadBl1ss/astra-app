@@ -144,6 +144,9 @@ Windows не выпускает его мимо VPN, пока тот перез�
   обычную.
 - Остаток трафика и срок подписки с предупреждением, когда они на исходе.
 - Пинг, полоска стабильности, избранное, поиск по имени, стране и адресу.
+- Проверка всех серверов: у каждого свои 5 секунд, по 16 разом, сверху вниз,
+  и на экране видно, какая подписка проверяется и сколько в ней отвечает.
+  Работает и при выключенном VPN.
 - Сервер меняется на лету, без перезапуска VPN.
 - Подписки обновляются сами; HWID для панелей с лимитом устройств
   (Remnawave).
@@ -451,8 +454,15 @@ ads, no telemetry.
 
 - A subscription link or a single server: **VLESS** (including **REALITY**
   and **XHTTP**), **Trojan**, **Shadowsocks**, **Hysteria2**.
+- The link a provider's bot makes for Happ, v2RayTun, Hiddify, INCY and
+  other apps works too, and so does a short link to a subscription page with
+  "Add to …" buttons: Strelka finds the subscription behind them. A link
+  Happ has encrypted cannot be read; ask the provider for a plain one.
 - Traffic left and subscription term, with a warning before they run out.
 - Ping, a stability meter, favourites, search by name, country and address.
+- Testing every server: each gets its own 5 seconds, 16 at a time, top to
+  bottom, and the window shows which subscription is being tested and how
+  many of its servers answer. Works with the VPN off too.
 - The server changes on the fly, without restarting the VPN.
 - Subscriptions update themselves; HWID for panels with a device limit
   (Remnawave).
