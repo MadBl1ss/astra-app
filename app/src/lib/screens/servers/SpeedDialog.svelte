@@ -372,6 +372,8 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+    /* A grid item would not shrink below its longest name otherwise. */
+    min-width: 0;
     max-width: 100%;
     font-size: var(--fs-body);
     text-align: center;
