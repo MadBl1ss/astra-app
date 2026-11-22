@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"runtime"
@@ -28,6 +29,7 @@ import (
 	"strelka/internal/netmon"
 	"strelka/internal/profile"
 	"strelka/internal/rules"
+	"strelka/internal/speed"
 	"strelka/internal/stats"
 	"strelka/internal/store"
 	"strelka/proto"
@@ -104,6 +106,13 @@ type Options struct {
 	Fetch  func(ctx context.Context, url string) error
 	Lookup func(ctx context.Context, host string) error
 
+	// SpeedOpen opens a speed test's download through a server; nil goes
+	// through the engine's gate to the internet (speed.URLs). SpeedLimits
+	// bound one download; zero means speed.Default. Tests put stand-ins
+	// here, so as not to touch the network or wait ten seconds a server.
+	SpeedOpen   func(ctx context.Context, server string) (io.ReadCloser, error)
+	SpeedLimits speed.Limits
+
 	// FindLegacy and RetireLegacy find and turn off an old Strelka
 	// (legacy.detect, legacy.retire). Nil means the real ones; tests put
 	// stand-ins here, since the real retire on a developer's machine would
@@ -161,6 +170,7 @@ type Daemon struct {
 	// Shared with the supervisors' goroutines and the poller.
 	plan        atomic.Pointer[plan]         // what the next engine start is built from
 	api         atomic.Pointer[clash.Client] // the running sing-box's Clash API
+	gate        atomic.Pointer[confgen.Gate] // and its gate for speed tests
 	live        atomic.Bool                  // phase is "on": the API may be asked
 	checkedBox  atomic.Uint64                // plan generation whose config passed the check
 	checkedXray atomic.Uint64
@@ -188,7 +198,8 @@ type Daemon struct {
 	phaseBusy string         // starting | stopping
 	job       string         // updating_subs | testing
 	test      *testRun       // the server test under way, see servertest.go
-	tests     sync.WaitGroup // its goroutine, waited for on the way out
+	speed     *speedRun      // the speed test under way, see speedtest.go
+	tests     sync.WaitGroup // their goroutines, waited for on the way out
 	autoInfo  map[string]autoListInfo
 	versions  map[string]versionInfo // engine.versions, by engine name
 
@@ -471,6 +482,9 @@ func (d *Daemon) shutdown() {
 	if d.test != nil {
 		d.test.cancel()
 	}
+	if d.speed != nil {
+		d.speed.cancel()
+	}
 	d.log(proto.CatSystem, proto.LevelInfo, "Служба остановлена.")
 	d.publish()
 }
@@ -649,7 +663,7 @@ func (d *Daemon) stopEngines() {
 }
 
 func (d *Daemon) markStarting() {
-	if d.test != nil && d.test.pub.Own {
+	if (d.test != nil && d.test.pub.Own) || (d.speed != nil && d.speed.pub.Own) {
 		d.interruptTest(true, "включается VPN")
 	} else {
 		d.interruptTest(true, "VPN перезапускается")

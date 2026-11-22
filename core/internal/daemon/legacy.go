@@ -205,7 +205,7 @@ func (d *Daemon) adoptLegacy(ld *legacyData, failed []string) *proto.LegacyImpor
 				pool = append(pool, s.ID)
 			}
 		}
-		if order := d.stats.Order(pool); len(order) > 0 {
+		if order := d.stats.Order(pool, time.Now()); len(order) > 0 {
 			d.prof.Selected = order[0]
 		}
 	}

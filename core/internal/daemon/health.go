@@ -433,7 +433,7 @@ func (d *Daemon) others(except string, n int) []string {
 	for _, s := range d.prof.Servers {
 		rest = append(rest, s.ID)
 	}
-	for _, id := range d.stats.Order(rest) {
+	for _, id := range d.stats.Order(rest, time.Now()) {
 		add(id)
 	}
 	return pool

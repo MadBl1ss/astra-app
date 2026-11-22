@@ -1,0 +1,65 @@
+{
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 17400,
+      "protocol": "socks",
+      "settings": {
+        "ip": "127.0.0.1",
+        "udp": true
+      },
+      "tag": "in-t-LV"
+    }
+  ],
+  "log": {
+    "access": "none",
+    "loglevel": "warning"
+  },
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "lv.example.com",
+            "port": 443,
+            "users": [
+              {
+                "encryption": "none",
+                "id": "33333333-3333-4333-8333-333333333333"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "lv.example.com"
+        },
+        "xhttpSettings": {
+          "host": "",
+          "mode": "auto",
+          "path": "/x"
+        }
+      },
+      "tag": "t-LV"
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "inboundTag": [
+          "in-t-LV"
+        ],
+        "outboundTag": "t-LV",
+        "type": "field"
+      }
+    ]
+  }
+}

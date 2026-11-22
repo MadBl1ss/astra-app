@@ -184,6 +184,7 @@ func scratch(path, tag string) string {
 func (d *Daemon) vet(ctx context.Context, pl *plan, tag string) error {
 	in := pl.in
 	in.Controller, in.Secret = "127.0.0.1:9", "check"
+	in.Gate = &confgen.Gate{Port: 10, Password: "check"}
 	raw, err := confgen.Build(in)
 	if err != nil {
 		return err
@@ -236,8 +237,12 @@ func (d *Daemon) prepareBox() (engine.Launch, func(context.Context) error, error
 	if err != nil {
 		return engine.Launch{}, nil, err
 	}
+	gate, err := newGate()
+	if err != nil {
+		return engine.Launch{}, nil, err
+	}
 	in := pl.in
-	in.Controller, in.Secret = fmt.Sprintf("127.0.0.1:%d", port), secret
+	in.Controller, in.Secret, in.Gate = fmt.Sprintf("127.0.0.1:%d", port), secret, gate
 	raw, err := confgen.Build(in)
 	if err != nil {
 		return engine.Launch{}, nil, prepareFailed(err)
@@ -276,11 +281,26 @@ func (d *Daemon) prepareBox() (engine.Launch, func(context.Context) error, error
 	}
 	api := clash.New(in.Controller, secret)
 	d.api.Store(api)
+	d.gate.Store(gate)
 	ready := func(ctx context.Context) error {
 		_, err := api.Version(ctx)
 		return err
 	}
 	return l, ready, nil
+}
+
+// newGate picks a port and a password for an engine's gate: fresh ones
+// every start, like the Clash API's.
+func newGate() (*confgen.Gate, error) {
+	port, err := engine.FreePort()
+	if err != nil {
+		return nil, err
+	}
+	secret, err := engine.NewSecret()
+	if err != nil {
+		return nil, err
+	}
+	return &confgen.Gate{Port: port, Password: secret}, nil
 }
 
 // prepareXray runs before every start of the helper.

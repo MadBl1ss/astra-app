@@ -63,6 +63,7 @@ const (
 	BusyStopping     = "stopping"
 	BusyUpdatingSubs = "updating_subs"
 	BusyTesting      = "testing"
+	BusyMeasuring    = "measuring" // a speed test
 )
 
 // Values of servers[].check: where a server is in the test under way.
@@ -72,10 +73,16 @@ const (
 	CheckDone    = "done"
 )
 
-// Values of test.stage.
+// Values of test.stage and speed.stage.
 const (
 	TestPreparing = "preparing" // the test's own engine is coming up
 	TestTesting   = "testing"
+)
+
+// Values of speed.phase: what is being done to the server being measured.
+const (
+	SpeedPing     = "ping"
+	SpeedDownload = "download"
 )
 
 // State is the one document the daemon broadcasts in full on every change.
@@ -97,6 +104,8 @@ type State struct {
 	Busy      *string    `json:"busy"`
 	// Test is the server test under way; nil when there is none.
 	Test *TestRun `json:"test"`
+	// Speed is the speed test under way; nil when there is none.
+	Speed *SpeedRun `json:"speed"`
 	// Place is where the computer is, for the globe on the window's Home;
 	// nil while it is not known.
 	Place *Place `json:"place"`
@@ -179,10 +188,52 @@ type TestRun struct {
 	Alive int  `json:"alive"` // answered
 }
 
+// ServerStats is what the daemon has learnt about a server over time.
 type ServerStats struct {
-	Avg     int     `json:"avg"`
-	Loss    float64 `json:"loss"`
-	Samples int     `json:"samples"`
+	Avg     int     `json:"avg"`     // typical delay, ms; 0 when it never answered
+	Jitter  int     `json:"jitter"`  // how much the delay wobbles around that, ms
+	Loss    float64 `json:"loss"`    // share of checks without an answer, 0..1
+	Samples int     `json:"samples"` // answers counted
+	// Score is delay, wobble, answers and speed together, 0..100; Trust,
+	// 0..1, how much of it is evidence rather than a guess. A server with
+	// little evidence scores close to 50 whatever it showed.
+	Score int     `json:"score"`
+	Trust float64 `json:"trust"`
+	Days  int     `json:"days"` // days with answers in the last two weeks
+	// Stable: it has answered on several days, nearly always, evenly.
+	Stable bool `json:"stable"`
+	// Speed is the typical download speed, Mbit/s; nil until measured.
+	Speed   *float64   `json:"speed"`
+	SpeedAt *time.Time `json:"speedAt"`
+}
+
+// SpeedRun is a speed test under way: one server after another, each pinged
+// a few times and then made to download for a few seconds.
+type SpeedRun struct {
+	Started time.Time `json:"started"`
+	Stage   string    `json:"stage"` // preparing | testing
+	// Own: the test runs on an engine of its own, since the VPN is off.
+	Own bool     `json:"own"`
+	IDs []string `json:"ids"` // in the order they are measured
+	// Current is the server being measured and Phase what is being done to
+	// it; both nil between servers.
+	Current *string `json:"current"`
+	Phase   *string `json:"phase"`
+	// Results are the servers measured so far, in order.
+	Results []SpeedResult `json:"results"`
+	// The bounds of one download, for the window to word what it costs.
+	MaxBytes   int64 `json:"maxBytes"`
+	MaxSeconds int   `json:"maxSeconds"`
+}
+
+// SpeedResult is how one server did in a speed test.
+type SpeedResult struct {
+	ID     string   `json:"id"`
+	Ping   *int     `json:"ping"`   // the middle of its pings; nil: it did not answer
+	Jitter *int     `json:"jitter"` // how far its pings were from that
+	Mbps   *float64 `json:"mbps"`   // nil: the download failed
+	Bytes  int64    `json:"bytes"`  // traffic the download took
+	Error  *string  `json:"error"`  // why a number is missing, for the user
 }
 
 type Sub struct {

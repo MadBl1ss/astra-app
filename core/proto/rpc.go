@@ -27,12 +27,13 @@ const (
 	TopicToast       = "toast"
 	TopicLog         = "log"
 	TopicDiag        = "diag"
+	TopicSpeed       = "speed"
 )
 
 // KnownTopic reports whether a client may subscribe to topic.
 func KnownTopic(topic string) bool {
 	switch topic {
-	case TopicState, TopicJournal, TopicTraffic, TopicConnections, TopicToast, TopicLog, TopicDiag:
+	case TopicState, TopicJournal, TopicTraffic, TopicConnections, TopicToast, TopicLog, TopicDiag, TopicSpeed:
 		return true
 	}
 	return false
@@ -116,7 +117,8 @@ const (
 	MethodModeSet        = "mode.set"
 	MethodServerSelect   = "server.select"
 	MethodServerTest     = "server.test"
-	MethodServerTestStop = "server.testStop"
+	MethodServerTestStop = "server.testStop" // stops a speed test too
+	MethodServerSpeed    = "server.speedTest"
 	MethodServerFavorite = "server.favorite"
 	MethodServerReorder  = "server.reorder"
 	MethodServerRemove   = "server.remove"
@@ -146,6 +148,26 @@ type ServerTestParams struct {
 	// IDs are tested in this order; empty means every server, in the
 	// window's order: favourites, subscriptions, servers added by link.
 	IDs []string `json:"ids,omitempty"`
+}
+
+type ServerSpeedParams struct {
+	// IDs are measured in this order, one at a time; empty means the
+	// selected server.
+	IDs []string `json:"ids,omitempty"`
+}
+
+// SpeedSample is the "speed" notification: the server being measured, a few
+// times a second.
+type SpeedSample struct {
+	ID    string `json:"id"`
+	Phase string `json:"phase"` // ping | download
+	// In the ping phase, the ping that has just come (nil: no answer).
+	Ping *int `json:"ping"`
+	// In the download phase: the speed over the last moments, what has come
+	// so far and since when, ms from the first byte.
+	Mbps    float64 `json:"mbps"`
+	Bytes   int64   `json:"bytes"`
+	Elapsed int     `json:"elapsed"`
 }
 
 type ServerFavoriteParams struct {

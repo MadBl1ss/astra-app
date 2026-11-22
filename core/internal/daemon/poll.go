@@ -4,9 +4,11 @@ import (
 	"context"
 	"net"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"strelka/internal/clash"
+	"strelka/internal/confgen"
 	"strelka/internal/health"
 	"strelka/proto"
 )
@@ -94,12 +96,13 @@ func (d *Daemon) pollEngine() {
 // received compares the bytes that came back over each VPN connection with
 // the previous look. It answers per connection, not from the totals: the
 // engine's total counts direct traffic too, and that proves nothing about
-// the server. prev is nil on the first look at an engine, when there is
-// nothing to compare with yet.
+// the server. Nor does a speed test's download, which goes through whatever
+// server is being measured. prev is nil on the first look at an engine,
+// when there is nothing to compare with yet.
 func received(prev map[string]int64, snap clash.Snapshot) (now map[string]int64, grew bool) {
 	now = make(map[string]int64, len(snap.Conns))
 	for _, c := range snap.Conns {
-		if c.Direct() {
+		if c.Direct() || strings.HasSuffix(c.Inbound, "/"+confgen.GateTag) {
 			continue
 		}
 		now[c.ID] = c.Download

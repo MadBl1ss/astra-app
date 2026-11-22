@@ -54,5 +54,6 @@
   },
   "busy": null,
   "test": null,
-  "place": null
+  "place": null,
+  "speed": null
 }

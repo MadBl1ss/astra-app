@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"strelka/internal/confgen"
@@ -34,6 +35,8 @@ func (d *Daemon) dispatchProfile(c rpcCall) (any, *proto.Error, bool) {
 		return now(d.serverTest(c))
 	case proto.MethodServerTestStop:
 		return now(d.serverTestStop())
+	case proto.MethodServerSpeed:
+		return now(d.serverSpeed(c))
 	case proto.MethodSubsRename:
 		return now(d.subsRename(c))
 	case proto.MethodSubsRemove:
@@ -100,6 +103,8 @@ func (d *Daemon) jobBusy() *proto.Error {
 		return proto.Errorf(proto.CodeBusy, "Подписки сейчас обновляются. Подожди, пока закончится.")
 	case proto.BusyTesting:
 		return proto.Errorf(proto.CodeBusy, "Идёт проверка серверов. Подожди, пока закончится.")
+	case proto.BusyMeasuring:
+		return proto.Errorf(proto.CodeBusy, "Идёт замер скорости. Подожди, пока закончится.")
 	}
 	return nil
 }
@@ -112,6 +117,7 @@ func (d *Daemon) saveProfile() {
 
 // refresh rebuilds the parts of State that mirror the profile.
 func (d *Daemon) refresh() {
+	now := time.Now()
 	servers := make([]proto.Server, 0, len(d.prof.Servers))
 	for _, s := range d.prof.Servers {
 		ps := proto.Server{
@@ -134,9 +140,7 @@ func (d *Daemon) refresh() {
 				ps.Ping = &ms
 			}
 		}
-		if st := d.stats.Servers[s.ID]; st != nil && (st.N > 0 || st.Miss > 0) {
-			ps.Stats = &proto.ServerStats{Avg: int(st.Avg + 0.5), Loss: float64(int(st.Miss*100+0.5)) / 100, Samples: st.N}
-		}
+		ps.Stats = d.serverStats(s.ID, now)
 		if d.test != nil {
 			if c, ok := d.test.check[s.ID]; ok {
 				ps.Check = &c
@@ -149,6 +153,11 @@ func (d *Daemon) refresh() {
 	if d.test != nil {
 		pub := d.test.pub
 		d.st.Test = &pub
+	}
+	d.st.Speed = nil
+	if d.speed != nil {
+		pub := d.speed.pub
+		d.st.Speed = &pub
 	}
 
 	subsOut := make([]proto.Sub, 0, len(d.prof.Subs))
@@ -183,6 +192,31 @@ func (d *Daemon) refresh() {
 }
 
 // serverName is how a server is called in the journal.
+// serverStats is a server's record as the window shows it; nil when
+// nothing is known about it.
+func (d *Daemon) serverStats(id string, now time.Time) *proto.ServerStats {
+	q := d.stats.Quality(id, now)
+	if !q.Known {
+		return nil
+	}
+	ps := &proto.ServerStats{
+		Avg:     int(math.Round(q.Ping)),
+		Jitter:  int(math.Round(q.Jitter)),
+		Loss:    math.Round(q.Loss*100) / 100,
+		Samples: d.stats.Servers[id].N,
+		Score:   int(math.Round(q.Score)),
+		Trust:   math.Round(q.Trust*100) / 100,
+		Days:    q.Days,
+		Stable:  q.Stable,
+	}
+	if q.Mbps > 0 {
+		mbps := math.Round(q.Mbps*10) / 10
+		at := d.stats.Servers[id].SpeedAt.UTC().Truncate(time.Second)
+		ps.Speed, ps.SpeedAt = &mbps, &at
+	}
+	return ps
+}
+
 func (d *Daemon) serverName(id string) string {
 	if s := d.prof.Server(id); s != nil && s.Name != "" && s.Name != id {
 		return fmt.Sprintf("%s (%s)", s.Name, id)

@@ -259,6 +259,7 @@ type Conn struct {
 	DestIP      string
 	DestPort    string
 	ProcessPath string
+	Inbound     string   // "type/tag" of the inbound it came in by: "tun/tun-in"
 	Chains      []string // from the server actually used up to the group
 	Upload      int64
 	Download    int64
@@ -298,6 +299,7 @@ func (cl *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				DstIP       string `json:"destinationIP"`
 				DstPort     string `json:"destinationPort"`
 				ProcessPath string `json:"processPath"`
+				Type        string `json:"type"`
 			} `json:"metadata"`
 		} `json:"connections"`
 	}
@@ -308,7 +310,7 @@ func (cl *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	for _, c := range r.Connections {
 		out.Conns = append(out.Conns, Conn{
 			ID: c.ID, Host: c.Metadata.Host, DestIP: c.Metadata.DstIP, DestPort: c.Metadata.DstPort,
-			ProcessPath: c.Metadata.ProcessPath, Chains: c.Chains,
+			ProcessPath: c.Metadata.ProcessPath, Inbound: c.Metadata.Type, Chains: c.Chains,
 			Upload: c.Upload, Download: c.Download, Start: c.Start,
 		})
 	}
