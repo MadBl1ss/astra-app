@@ -281,6 +281,7 @@ func (d *Daemon) tick() {
 	if wall.Sub(d.subsChecked) >= time.Hour {
 		d.checkSubs()
 	}
+	d.autoRate(wall)
 	if d.statsDirty && wall.Sub(d.statsSaved) >= 10*time.Minute {
 		d.saveStats(wall)
 	}

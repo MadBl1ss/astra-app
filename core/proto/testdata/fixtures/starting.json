@@ -160,7 +160,8 @@
     "failover": false,
     "autoUpdateSubs": "12h",
     "localProxyPort": 0,
-    "startOnBoot": true
+    "startOnBoot": true,
+    "rating": true
   },
   "busy": "starting",
   "test": null,

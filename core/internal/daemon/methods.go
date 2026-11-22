@@ -532,6 +532,8 @@ func (d *Daemon) settingsSet(c rpcCall) (any, *proto.Error) {
 			err = json.Unmarshal(raw, &next.LocalProxyPort)
 		case "startOnBoot":
 			err = json.Unmarshal(raw, &next.StartOnBoot)
+		case "rating":
+			err = json.Unmarshal(raw, &next.Rating)
 		default:
 			return nil, proto.Errorf(proto.CodeInvalidParams, "Нет такой настройки: «%s».", key)
 		}

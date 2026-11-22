@@ -113,6 +113,11 @@ type Options struct {
 	SpeedOpen   func(ctx context.Context, server string) (io.ReadCloser, error)
 	SpeedLimits speed.Limits
 
+	// RateEvery and RateSettle override how often the quiet rounds of the
+	// rating run and how long after the VPN comes on the first one waits.
+	RateEvery  time.Duration
+	RateSettle time.Duration
+
 	// FindLegacy and RetireLegacy find and turn off an old Strelka
 	// (legacy.detect, legacy.retire). Nil means the real ones; tests put
 	// stand-ins here, since the real retire on a developer's machine would
@@ -174,7 +179,8 @@ type Daemon struct {
 	live        atomic.Bool                  // phase is "on": the API may be asked
 	checkedBox  atomic.Uint64                // plan generation whose config passed the check
 	checkedXray atomic.Uint64
-	noV6        atomic.Bool // the network has no IPv6 way out, see ipv6Mode
+	noV6        atomic.Bool  // the network has no IPv6 way out, see ipv6Mode
+	downRate    atomic.Int64 // bytes a second coming in through the engine, by the poller
 
 	// Everything below belongs to the loop goroutine.
 	st         proto.State
@@ -220,6 +226,8 @@ type Daemon struct {
 	ps placeState // where the computer is, see place.go
 
 	diagBusy bool // a diag.run is under way, see diagrun.go
+
+	rate rateState // the quiet rounds of the rating, see rating.go
 }
 
 // New prepares a daemon: folders, the saved state, the profile, the rules.

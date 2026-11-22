@@ -293,6 +293,9 @@ type Settings struct {
 	AutoUpdateSubs  string `json:"autoUpdateSubs"`
 	LocalProxyPort  int    `json:"localProxyPort"`
 	StartOnBoot     bool   `json:"startOnBoot"`
+	// Rating: while the VPN works, a few servers are pinged every so often
+	// to keep their rating fresh.
+	Rating bool `json:"rating"`
 }
 
 // DefaultSettings are the values of a fresh install.
@@ -307,6 +310,7 @@ func DefaultSettings() Settings {
 		AutoUpdateSubs:  "12h",
 		LocalProxyPort:  0,
 		StartOnBoot:     true,
+		Rating:          true,
 	}
 }
 

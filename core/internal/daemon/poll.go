@@ -52,6 +52,7 @@ func (d *Daemon) pollEngine() {
 			rx = nil
 		}
 		last, lastAPI = snap, api
+		d.downRate.Store(down)
 
 		var more bool
 		rx, more = received(rx, snap)

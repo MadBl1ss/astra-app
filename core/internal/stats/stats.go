@@ -157,6 +157,15 @@ func (st *Stats) Save(path string, now time.Time) error {
 	}{version, st.Servers})
 }
 
+// LastHeard is when anything was last learnt about a server; zero for one
+// nothing is known about.
+func (st *Stats) LastHeard(tag string) time.Time {
+	if s := st.Servers[tag]; s != nil {
+		return s.last()
+	}
+	return time.Time{}
+}
+
 // last is when anything was last learnt about the server.
 func (s *Stat) last() time.Time {
 	t := s.Seen
