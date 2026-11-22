@@ -15,6 +15,7 @@ import type {
   RuleListName,
   Rules,
   Server,
+  ServerStats,
   Severity,
   State,
   Sub,
@@ -76,6 +77,49 @@ interface SubPlan {
  * out), two servers added by link,
  * 200 servers in all, some with very long names.
  */
+/**
+ * A server's record as the daemon would have built it from so many answers
+ * and misses, with the daemon's own formula in short (core/internal/stats).
+ * The fake world has no history, so "evidence" is a tenth of the samples.
+ */
+export function rated(avg: number, loss: number, samples: number, speed: number | null, speedAt: string | null): ServerStats {
+  const w = Math.min(samples / 10, 60);
+  const jitter = avg > 0 ? Math.round(avg * 0.08) + 2 : 0;
+  const missW = loss < 1 ? (w * loss) / (1 - loss) : 3;
+  let lat = 0;
+  if (avg > 0) {
+    const l = (avg + 2 * jitter) / 300;
+    lat = 1 / (1 + l * l);
+  }
+  const rel = Math.pow(1 - (missW + 0.1) / (w + missW + 2), 4);
+  const m = speed ?? 22;
+  const raw = Math.pow(lat, 0.45) * rel * Math.pow(m / (m + 15), 0.35);
+  const evidence = w + missW + (speed !== null ? 1 : 0);
+  const trust = evidence / (evidence + 3);
+  const days = avg > 0 ? Math.min(14, Math.max(1, Math.floor(samples / 25))) : 0;
+  return {
+    avg,
+    jitter,
+    loss: Math.round(loss * 100) / 100,
+    samples,
+    score: Math.round(100 * (trust * raw + (1 - trust) * 0.5)),
+    trust: Math.round(trust * 100) / 100,
+    days,
+    stable: avg > 0 && w >= 6 && days >= 3 && loss < 0.03 && jitter <= Math.max(25, 0.3 * avg),
+    speed,
+    speedAt: speed !== null ? speedAt : null,
+  };
+}
+
+/** The record after one more check: an answer of ms, or a miss when null. */
+export function answered(stats: ServerStats | null, ms: number | null): ServerStats {
+  const s = stats ?? rated(0, 0, 0, null, null);
+  const n = s.samples + 1;
+  const misses = s.loss * s.samples + (ms === null ? 1 : 0);
+  const avg = ms === null ? s.avg : s.avg > 0 ? Math.round(s.avg * 0.8 + ms * 0.2) : ms;
+  return rated(avg, misses / n, n, s.speed, s.speedAt);
+}
+
 export function crowd(state: State, now: number): State {
   const rnd = random(20261116);
   const day = 86_400_000;
@@ -224,6 +268,7 @@ function makeServer(
   const ping = alive ? Math.round(base + rnd() * base * 0.6 + slow) : null;
   const samples = tested ? Math.floor(rnd() * 420) : 0;
   const loss = rnd() > 0.8 ? 0.08 + rnd() * 0.35 : rnd() * 0.04;
+  const speed = alive && rnd() > 0.55 ? Math.round((8 + rnd() * 140) * 10) / 10 : null;
   const host = rnd() > 0.7 ? `203.0.113.${(i * 7) % 250}` : `${id.toLowerCase()}.edge.example.net`;
   return {
     id,
@@ -238,7 +283,7 @@ function makeServer(
     ping,
     pingAt: tested ? iso(now - Math.floor(rnd() * 30) * 60_000) : null,
     alive,
-    stats: samples > 0 ? { avg: Math.round((ping ?? base * 1.4) * 1.08), loss: Math.round(loss * 100) / 100, samples } : null,
+    stats: samples > 0 ? rated(Math.round((ping ?? base * 1.4) * 1.08), alive ? loss : 1, samples, speed, iso(now - 3 * 3_600_000)) : null,
     check: null,
   };
 }

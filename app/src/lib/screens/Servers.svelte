@@ -13,13 +13,16 @@
   import type { MenuItem } from '../components/Menu.svelte';
   import { ru } from '../i18n/ru';
   import type { Server, State, Sub } from '../proto';
+  import { bestOf, fastIds } from '../rating';
   import { freshIn, progressOf, type Round } from '../rounds';
   import { favoritesOf, groupServers, moved, pingOf, subFacts, type Group } from '../servers';
   import { daemon } from '../store.svelte';
   import { displayName } from '../view';
   import AddDialog from './servers/AddDialog.svelte';
+  import BestStrip from './servers/BestStrip.svelte';
   import GroupHeader from './servers/GroupHeader.svelte';
   import ServerRow from './servers/ServerRow.svelte';
+  import SpeedDialog, { type Preset } from './servers/SpeedDialog.svelte';
 
   let { state: s }: { state: State } = $props();
 
@@ -124,7 +127,7 @@
 
   // ---- what is going on ----
 
-  const busy = $derived(s.busy === 'testing' || s.busy === 'updating_subs' ? s.busy : null);
+  const busy = $derived(s.busy === 'testing' || s.busy === 'updating_subs' || s.busy === 'measuring' ? s.busy : null);
   // With the VPN on the test goes through it; off or failed, the daemon
   // brings an engine of its own. Only a VPN on its way up or down waits.
   const phaseLets = $derived(s.vpn.phase === 'on' || s.vpn.phase === 'off' || s.vpn.phase === 'failed');
@@ -184,6 +187,23 @@
     void daemon.rpc('subs.update', {});
   }
 
+  // ---- the rating and the speed test ----
+
+  // The cards on top: from two servers with a score worth trusting.
+  const best = $derived(bestOf(s.servers, 3));
+  const crowned = $derived(best[0]?.id ?? null);
+  const fast = $derived(fastIds(s.servers));
+  const canMeasure = $derived(phaseLets && busy === null);
+
+  function measure(preset: Preset, picked: string[] = [], autostart = false): void {
+    dialog = { kind: 'speed', preset, picked, autostart };
+  }
+
+  /** Opens the dialog of the test under way, or a new one on the server in use. */
+  function openSpeed(): void {
+    measure(s.speed ? 'picked' : 'current', s.speed?.ids ?? []);
+  }
+
   // ---- dialogs ----
 
   type DialogState =
@@ -191,6 +211,7 @@
     | { kind: 'rename'; sub: Sub; name: string; error: string | null }
     | { kind: 'removeSub'; sub: Sub }
     | { kind: 'removeServer'; server: Server }
+    | { kind: 'speed'; preset: Preset; picked: string[]; autostart: boolean }
     | null;
   let dialog = $state<DialogState>(null);
   let working = $state(false);
@@ -241,7 +262,7 @@
   <header class="top">
     <h1>{ru.nav.servers}</h1>
     <div class="tools">
-      <Field label={t.search} hideLabel icon="search" placeholder={t.searchPlaceholder} bind:value={query} width="210px" />
+      <Field label={t.search} hideLabel icon="search" placeholder={t.searchPlaceholder} bind:value={query} width="180px" />
       <Hint text={testNote} side="bottom">
         {#snippet children(describedby)}
           <span aria-describedby={describedby}>
@@ -256,9 +277,26 @@
           </span>
         {/snippet}
       </Hint>
-      <Button icon="refresh" busy={busy === 'updating_subs'} disabled={s.subs.length === 0 || busy !== null} onclick={updateAll}>
-        {busy === 'updating_subs' ? t.updating : t.updateSubs}
-      </Button>
+      <Hint text={s.speed ? ru.speed.openRunning(s.speed.results.length, s.speed.ids.length) : ru.speed.openNote} side="bottom">
+        {#snippet children(describedby)}
+          <span aria-describedby={describedby} class="speedbtn" class:running={s.speed !== null}>
+            <!-- Under way, the count takes the word's place: the header has
+                 no room for both, and the breathing border says the rest. -->
+            <Button icon="gauge" disabled={!s.speed && (!canMeasure || s.servers.length === 0)} onclick={openSpeed}>
+              {#if s.speed}<span class="num">{s.speed.results.length}/{s.speed.ids.length}</span>{:else}{ru.speed.open}{/if}
+            </Button>
+          </span>
+        {/snippet}
+      </Hint>
+      <Hint text={t.updateSubs} side="bottom">
+        {#snippet children(describedby)}
+          <span aria-describedby={describedby}>
+            <Button icon="refresh" busy={busy === 'updating_subs'} disabled={s.subs.length === 0 || busy !== null} onclick={updateAll}>
+              {busy === 'updating_subs' ? t.updating : t.update}
+            </Button>
+          </span>
+        {/snippet}
+      </Hint>
       <Button icon="plus" onclick={() => (dialog = { kind: 'add' })}>{t.add}</Button>
     </div>
   </header>
@@ -295,6 +333,17 @@
     {:else if groups.length === 0 || groups.every((g) => g.servers.length === 0 && g.kind !== 'sub')}
       <Empty icon="search" title={t.nothingFound} text={t.nothingFoundText} />
     {:else}
+      {#if !query && best.length >= 2}
+        <BestStrip
+          servers={best}
+          selected={s.server.selected}
+          folded={folded['best'] ?? false}
+          measureDisabled={!canMeasure}
+          onselect={(id) => daemon.selectServer(id)}
+          onmeasure={() => measure('best')}
+          onfold={() => (folded['best'] = !(folded['best'] ?? false))}
+        />
+      {/if}
       {#each groups as group (group.key)}
         {@const isFolded = folded[group.key] ?? false}
         {@const listId = `list-${group.key}`}
@@ -333,6 +382,11 @@
                   grip={group.kind === 'favorites' && !query && favorites.length > 1}
                   shift={group.kind === 'favorites' ? shiftOf(i, server.id) : 0}
                   dragging={drag?.id === server.id}
+                  best={server.id === crowned}
+                  fast={fast.has(server.id)}
+                  measuring={s.speed?.current === server.id ? s.speed.phase : null}
+                  now={minute}
+                  onmeasure={canMeasure ? () => measure('picked', [server.id], true) : undefined}
                   onselect={() => daemon.selectServer(server.id)}
                   onstar={() => daemon.rpc('server.favorite', { id: server.id, favorite: !server.favorite })}
                   onremove={server.sub === '' ? () => (dialog = { kind: 'removeServer', server }) : undefined}
@@ -351,6 +405,8 @@
 
 {#if dialog?.kind === 'add'}
   <AddDialog onclose={() => (dialog = null)} onadded={added} />
+{:else if dialog?.kind === 'speed'}
+  <SpeedDialog state={s} preset={dialog.preset} picked={dialog.picked} autostart={dialog.autostart} onclose={() => (dialog = null)} />
 {:else if dialog?.kind === 'rename'}
   <Dialog title={ru.renameDialog.title} onclose={() => (dialog = null)}>
     <Field label={ru.renameDialog.name} bind:value={dialog.name} error={dialog.error} disabled={working} onenter={rename} />
@@ -486,6 +542,18 @@
 
   .count {
     color: var(--muted);
+  }
+
+  /* A speed test under way with its window closed: the button breathes. */
+  .speedbtn.running :global(.btn) {
+    border-color: color-mix(in srgb, var(--vpn) 55%, var(--line));
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    50% {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--vpn) 18%, transparent);
+    }
   }
 
   .via {

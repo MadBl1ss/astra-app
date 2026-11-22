@@ -143,7 +143,20 @@ Windows не выпускает его мимо VPN, пока тот перез�
   Зашифрованную ссылку Happ прочитать нельзя — для неё попроси у провайдера
   обычную.
 - Остаток трафика и срок подписки с предупреждением, когда они на исходе.
-- Пинг, полоска стабильности, избранное, поиск по имени, стране и адресу.
+- Пинг, избранное, поиск по имени, стране и адресу.
+- **Оценка каждого сервера** от 0 до 100: пинг, его ровность, доля ответов и
+  скорость за последние дни. Свежие замеры весят больше старых, частые
+  проверки не перетирают историю, а у сервера с парой удачных ответов
+  оценка остаётся скромной, пока он не докажет своё. Серверы, которые
+  отвечают почти всегда и ровно уже несколько дней, помечены
+  «стабильный»; три лучших — карточками над списком. Пока VPN работает,
+  Стрелка раз в 45 минут тихо пингует избранные, лучшие и давно не
+  проверенные серверы, чтобы оценка оставалась свежей.
+- **Замер скорости**: три пинга и скачивание на несколько секунд через
+  каждый выбранный сервер по очереди, со спидометром и итогом «быстрее
+  всех». Замер идёт мимо текущего сервера, так что VPN продолжает
+  работать; при выключенном VPN Стрелка замеряет без него. На сервер уходит
+  до 25 МБ трафика — сколько всего, окно скажет до начала.
 - Проверка всех серверов: у каждого свои 5 секунд, по 16 разом, сверху вниз,
   и на экране видно, какая подписка проверяется и сколько в ней отвечает.
   Работает и при выключенном VPN.
@@ -459,7 +472,20 @@ ads, no telemetry.
   "Add to …" buttons: Strelka finds the subscription behind them. A link
   Happ has encrypted cannot be read; ask the provider for a plain one.
 - Traffic left and subscription term, with a warning before they run out.
-- Ping, a stability meter, favourites, search by name, country and address.
+- Ping, favourites, search by name, country and address.
+- **A score for every server**, 0 to 100: ping, how evenly it holds, the
+  share of answers and the speed over the last days. Fresh samples weigh
+  more than old ones, frequent checks do not wash the history away, and a
+  server with a couple of lucky answers scores modestly until it proves
+  itself. Servers that have answered nearly always and evenly for several
+  days are marked "stable"; the best three are cards above the list. While
+  the VPN works, Strelka quietly pings the favourites, the best and the
+  least recently checked servers every 45 minutes to keep the scores fresh.
+- **Speed test**: three pings and a download of a few seconds through each
+  chosen server in turn, with a speedometer and the fastest one named. The
+  test goes past the server in use, so the VPN keeps working; with the VPN
+  off Strelka measures without it. A server costs up to 25 MB of traffic,
+  and the window says how much in all before it starts.
 - Testing every server: each gets its own 5 seconds, 16 at a time, top to
   bottom, and the window shows which subscription is being tested and how
   many of its servers answer. Works with the VPN off too.
