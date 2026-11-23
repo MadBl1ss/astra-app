@@ -243,18 +243,38 @@ func (d *Daemon) deliverHeld(c *ipc.Conn) {
 func (d *Daemon) checkSubs() {
 	now := time.Now()
 	d.subsChecked = now
-	before := d.im.Warned()
+	before, hidden := d.im.Warned(), d.im.Hidden()
 	d.emit(d.im.Subs(now, d.st.Settings.Notify, d.subStatus()))
-	after := d.im.Warned()
-	same := len(before) == len(after)
-	for k, v := range after {
-		same = same && before[k] == v
-	}
-	if !same {
+	if after := d.im.Warned(); !sameMap(before, after) {
 		if err := store.SaveJSON(d.opts.Paths.WarnedFile(), after); err != nil {
 			d.opts.Logf("saving the subscription warnings: %v", err)
 		}
 	}
+	d.saveHidden(hidden)
+}
+
+// saveHidden writes the closed subscription cards down if they are not what
+// they were.
+func (d *Daemon) saveHidden(before map[string]string) {
+	after := d.im.Hidden()
+	if sameMap(before, after) {
+		return
+	}
+	if err := store.SaveJSON(d.opts.Paths.HiddenFile(), after); err != nil {
+		d.opts.Logf("saving the closed warnings: %v", err)
+	}
+}
+
+func sameMap(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range b {
+		if w, ok := a[k]; !ok || w != v {
+			return false
+		}
+	}
+	return true
 }
 
 // ---- the clock -------------------------------------------------------------
@@ -524,6 +544,18 @@ func (d *Daemon) incidentAction(c rpcCall) (any, *proto.Error) {
 		// "Let the internet through without the VPN" is switching the VPN
 		// off: the one ordinary way the guard is ever lifted.
 		return d.vpnStop()
+	case p.Action == proto.ActionHide:
+		before := d.im.Hidden()
+		out, err := d.im.Hide(p.ID)
+		switch {
+		case errors.Is(err, incident.ErrCritical):
+			return nil, proto.Errorf(proto.CodeInvalid, "Это не скрыть: из-за этой проблемы сейчас нет интернета.")
+		case err != nil:
+			return nil, proto.Errorf(proto.CodeNotFound, "Этой проблемы уже нет.")
+		}
+		d.emit(out)
+		d.saveHidden(before)
+		return nil, nil
 	case p.Action == proto.ActionOpen, p.Action == proto.ActionDismiss:
 		return nil, nil // the application's own; nothing for the daemon to do
 	}

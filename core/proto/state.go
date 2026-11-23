@@ -270,6 +270,9 @@ type Incident struct {
 	Body     string    `json:"body"`
 	Flaps    int       `json:"flaps"`
 	Unstable bool      `json:"unstable"`
+	// Hidden: the window draws no card for it - the user closed the card or
+	// turned such warnings off. Never set on a critical incident.
+	Hidden bool `json:"hidden"`
 }
 
 // The values of Settings.IPv6.
@@ -284,7 +287,12 @@ const (
 )
 
 type Settings struct {
-	Notify          string `json:"notify"`
+	Notify string `json:"notify"`
+	// SubWarnings and ServerWarnings turn whole kinds of warnings off: no
+	// toast and no card, only the journal. A subscription about to end is
+	// something the user may well know already and cannot fix here.
+	SubWarnings     bool   `json:"subWarnings"`
+	ServerWarnings  bool   `json:"serverWarnings"`
 	QuietFullscreen bool   `json:"quietFullscreen"`
 	Guard           bool   `json:"guard"`
 	AllowLAN        bool   `json:"allowLan"`
@@ -302,6 +310,8 @@ type Settings struct {
 func DefaultSettings() Settings {
 	return Settings{
 		Notify:          "important",
+		SubWarnings:     true,
+		ServerWarnings:  true,
 		QuietFullscreen: true,
 		Guard:           true,
 		AllowLAN:        true,

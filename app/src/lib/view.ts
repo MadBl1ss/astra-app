@@ -135,6 +135,8 @@ export interface BannerView {
   title: string;
   body: string;
   actions: BannerAction[];
+  /** The cross: the user may put it away. Never for a critical one. */
+  closable: boolean;
 }
 
 /**
@@ -143,7 +145,7 @@ export interface BannerView {
  * window derives them from the incident kind.
  */
 export function banner(s: State): BannerView | null {
-  const incident = worst(s.incidents);
+  const incident = worst(s.incidents.filter((i) => !i.hidden));
   if (!incident) {
     if (!s.guard.blocking) return null;
     return {
@@ -155,6 +157,7 @@ export function banner(s: State): BannerView | null {
         { label: t.banner.retry, action: 'retry' },
         { label: t.banner.release, action: 'release' },
       ],
+      closable: false,
     };
   }
 
@@ -203,6 +206,7 @@ export function banner(s: State): BannerView | null {
     title: incident.title,
     body,
     actions: actions.slice(0, 2),
+    closable: incident.severity !== 'critical',
   };
 }
 

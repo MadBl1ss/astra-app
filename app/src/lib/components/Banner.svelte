@@ -1,17 +1,23 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
+  import IconButton from './IconButton.svelte';
 
   let {
     tone,
     title,
     body = '',
     actions,
+    closeLabel = '',
+    onclose,
   }: {
     tone: 'warn' | 'bad';
     title: string;
     body?: string;
     actions?: Snippet;
+    /** The cross; without onclose the strip stays until its trouble ends. */
+    closeLabel?: string;
+    onclose?: () => void;
   } = $props();
 </script>
 
@@ -23,6 +29,7 @@
     {#if body}<span title={body}>{body}</span>{/if}
   </div>
   {#if actions}<div class="acts">{@render actions()}</div>{/if}
+  {#if onclose}<span class="x"><IconButton icon="close" label={closeLabel} onclick={onclose} /></span>{/if}
 </div>
 
 <style>
@@ -72,6 +79,13 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+  }
+
+  /* The cross sits apart from the actions: it is not one of the ways out. */
+  .x {
+    display: flex;
+    margin-right: -4px;
+    color: var(--muted);
   }
 
   .acts {

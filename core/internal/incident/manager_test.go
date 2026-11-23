@@ -1,6 +1,7 @@
 package incident
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -799,5 +800,138 @@ func TestClosedInternetEndsWithItsOwnWords(t *testing.T) {
 	out := m.Observe(now, Input{Diag: ok, Level: level})
 	if len(out.Toasts) != 1 || !strings.HasPrefix(out.Toasts[0].Body, "VPN снова работает, интернет открыт. Был закрыт") {
 		t.Errorf("конец: %+v", out.Toasts)
+	}
+}
+
+// ---- cards the user closed, warnings turned off ----------------------------
+
+func TestAClosedServerCardStaysOutOfSightAndQuiet(t *testing.T) {
+	s := newStand(t, proto.NotifyImportant)
+	s.Run(28 * time.Second)
+	s.down()
+	s.Run(time.Minute)
+	if len(s.toasts) != 1 {
+		t.Fatalf("уведомлений %d, жду одно: %s", len(s.toasts), s.titles())
+	}
+	id := s.toasts[0].ID
+
+	if _, err := s.m.Hide("i-19990101-1"); !errors.Is(err, ErrNoIncident) {
+		t.Errorf("чужой id: %v", err)
+	}
+	out, err := s.m.Hide(id)
+	if err != nil || !out.Changed || len(out.Toasts) != 1 || !out.Toasts[0].Close || out.Toasts[0].ID != id {
+		t.Fatalf("скрыть: %+v, %v", out, err)
+	}
+	if list := s.m.Incidents(); len(list) != 1 || !list[0].Hidden {
+		t.Errorf("State.incidents после скрытия: %+v", list)
+	}
+	if out, err := s.m.Hide(id); err != nil || out.Changed || len(out.Toasts) != 0 {
+		t.Errorf("скрыть второй раз: %+v, %v", out, err)
+	}
+
+	// It ends: no "works again" about a card the user put away.
+	s.up()
+	s.Run(15 * time.Second)
+	if len(s.toasts) != 1 || len(s.m.Incidents()) != 0 {
+		t.Errorf("после окончания: уведомления %q, открытых %d", s.titles(), len(s.m.Incidents()))
+	}
+}
+
+func TestAClosedCardComesBackWhenItTurnsCritical(t *testing.T) {
+	m := New(health.Default())
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	var toasts []proto.Toast
+	see := func(d health.Diagnosis, blocking bool) {
+		out := m.Observe(now, Input{Diag: d, Level: proto.NotifyImportant, Server: Named{ID: "a-DE", Name: "Германия"}, Blocking: blocking})
+		toasts = append(toasts, out.Toasts...)
+	}
+	see(health.Diagnosis{Verdict: proto.VerdictServerDown, Server: "a-DE", Network: true, Internet: true}, false)
+	if len(toasts) != 1 {
+		t.Fatalf("сервер не отвечает: %+v", toasts)
+	}
+	if _, err := m.Hide(toasts[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now the internet is closed because of it: that is not to be put away.
+	now = now.Add(30 * time.Second)
+	see(health.Diagnosis{Verdict: proto.VerdictEngineFailed, Reason: proto.FailTUN, Network: true}, true)
+	list := m.Incidents()
+	if len(list) != 1 || list[0].Hidden || list[0].Severity != proto.SeverityCritical {
+		t.Fatalf("State.incidents: %+v", list)
+	}
+	if last := toasts[len(toasts)-1]; last.Close || last.Severity != proto.SeverityCritical {
+		t.Errorf("критичное не сказано: %+v", toasts)
+	}
+	if _, err := m.Hide(list[0].ID); !errors.Is(err, ErrCritical) {
+		t.Errorf("критичное спряталось: %v", err)
+	}
+}
+
+func TestServerWarningsTurnedOff(t *testing.T) {
+	s := newStand(t, proto.NotifyImportant)
+	if !s.m.Mute(false, true) || s.m.Mute(false, true) {
+		t.Error("Mute сообщает об изменении неверно")
+	}
+	s.Run(28 * time.Second)
+	s.down()
+	s.Run(time.Minute)
+	if len(s.toasts) != 0 || len(s.journal) != 1 {
+		t.Fatalf("уведомлений %d (%s), записей %d", len(s.toasts), s.titles(), len(s.journal))
+	}
+	if list := s.m.Incidents(); len(list) != 1 || !list[0].Hidden {
+		t.Errorf("State.incidents: %+v", list)
+	}
+	// Turned back on: the card is there; the toast moment has passed.
+	s.m.Mute(false, false)
+	if list := s.m.Incidents(); len(list) != 1 || list[0].Hidden {
+		t.Errorf("после включения: %+v", list)
+	}
+}
+
+func TestClosedAndMutedSubscriptionWarnings(t *testing.T) {
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	end := now.Add(30 * time.Hour)
+	list := []SubStatus{{ID: "s1", Name: "1984 VPN", ExpireAt: &end}}
+	m := New(health.Default())
+	out := m.Subs(now, proto.NotifyImportant, list)
+	if len(out.Toasts) != 1 {
+		t.Fatalf("предупреждение: %+v", out)
+	}
+	id := out.Toasts[0].ID
+	out, err := m.Hide(id)
+	if err != nil || !out.Changed || len(out.Toasts) != 1 || !out.Toasts[0].Close || !m.Incidents()[0].Hidden {
+		t.Fatalf("скрыть: %+v, %v, %+v", out, err, m.Incidents())
+	}
+
+	// A restart of the daemon keeps it closed.
+	m2 := New(health.Default())
+	m2.SetWarned(m.Warned())
+	m2.SetHidden(m.Hidden())
+	m2.Subs(now.Add(time.Hour), proto.NotifyImportant, list)
+	if inc := m2.Incidents(); len(inc) != 1 || !inc[0].Hidden {
+		t.Errorf("после перезапуска: %+v", inc)
+	}
+
+	// The term passes: a new state, a new card and a toast.
+	out = m2.Subs(now.Add(31*time.Hour), proto.NotifyImportant, list)
+	if inc := m2.Incidents(); len(out.Toasts) != 1 || len(inc) != 1 || inc[0].Hidden || inc[0].Kind != proto.IncidentSubExpired {
+		t.Errorf("срок вышел: %+v, %+v", out, inc)
+	}
+
+	// Renewed: what was closed is forgotten with it.
+	later := now.Add(60 * 24 * time.Hour)
+	list[0].ExpireAt = &later
+	m2.Subs(now.Add(32*time.Hour), proto.NotifyImportant, list)
+	if len(m2.Hidden()) != 0 || len(m2.Incidents()) != 0 {
+		t.Errorf("после продления: скрытые %v, карточки %+v", m2.Hidden(), m2.Incidents())
+	}
+
+	// Subscription warnings turned off: the journal only.
+	m3 := New(health.Default())
+	m3.Mute(true, false)
+	out = m3.Subs(now, proto.NotifyImportant, []SubStatus{{ID: "s1", Name: "1984 VPN", ExpireAt: &end}})
+	if len(out.Toasts) != 0 || len(out.Journal) != 1 || !m3.Incidents()[0].Hidden {
+		t.Errorf("предупреждения о подписках выключены: %+v, %+v", out, m3.Incidents())
 	}
 }

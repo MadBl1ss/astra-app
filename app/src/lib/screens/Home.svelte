@@ -147,6 +147,10 @@
     }[guard],
   );
 
+  function hide(id: string | null): void {
+    if (id) void daemon.act(id, 'hide');
+  }
+
   function run(action: BannerAction): void {
     if (action.action === 'journal') onjournal();
     else void daemon.act(strip?.id ?? null, action.action);
@@ -160,7 +164,13 @@
     <Starfield active={watched} />
 
     {#if strip}
-      <Banner tone={strip.tone} title={strip.title} body={strip.body}>
+      <Banner
+        tone={strip.tone}
+        title={strip.title}
+        body={strip.body}
+        closeLabel={t.banner.hide}
+        onclose={strip.closable && strip.id ? () => hide(strip.id) : undefined}
+      >
         {#snippet actions()}
           {#each strip.actions as action, i (action.action)}
             <Button variant={i === 0 ? 'default' : 'ghost'} onclick={() => run(action)}>{action.label}</Button>

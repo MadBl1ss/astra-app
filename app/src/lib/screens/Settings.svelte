@@ -239,6 +239,20 @@
           </div>
         {/snippet}
       </SettingRow>
+      <SettingRow label={t.subWarnings} note={t.subWarningsNote} error={errors.subWarnings}>
+        {#snippet children()}
+          <Switch size="sm" label={t.subWarnings} checked={shown.subWarnings} onchange={(on) => set('subWarnings', on)} />
+        {/snippet}
+      </SettingRow>
+      <SettingRow
+        label={t.serverWarnings}
+        note={shown.subWarnings && shown.serverWarnings ? t.serverWarningsNote : `${t.serverWarningsNote} ${t.warningsOff}`}
+        error={errors.serverWarnings}
+      >
+        {#snippet children()}
+          <Switch size="sm" label={t.serverWarnings} checked={shown.serverWarnings} onchange={(on) => set('serverWarnings', on)} />
+        {/snippet}
+      </SettingRow>
       <SettingRow label={t.quietFullscreen} note={t.quietFullscreenNote} error={errors.quietFullscreen}>
         {#snippet children()}
           <Switch

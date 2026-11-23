@@ -582,3 +582,45 @@ func TestReceivedCountsOnlyTheVPN(t *testing.T) {
 		t.Error("новое соединение с ответом не замечено")
 	}
 }
+
+// The cross on a card: the toast goes, the card stays out of sight across a
+// restart, and the warnings switch in the settings does the same wholesale.
+func TestClosingASubscriptionWarning(t *testing.T) {
+	sub := newSubServer(t, link("DE", "de.example.com"))
+	sub.setInfo(fmt.Sprintf("upload=1; download=2; total=100; expire=%d", time.Now().Add(40*time.Hour).Unix()))
+	paths := emptyData(t)
+	r := startRigWith(t, paths, "ok", quickHealth)
+	if err := r.longCall(proto.MethodSubsAdd, proto.SubsAddParams{URL: sub.URL, Name: "Основная"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	r.waitState("предупреждение", func(st proto.State) bool { return len(st.Incidents) == 1 })
+	id := r.last.Incidents[0].ID
+	if err := r.tryCall(proto.MethodIncidentAction, proto.IncidentActionParams{ID: "i-19990101-1", Action: proto.ActionHide}, nil); codeOf(err) != proto.CodeNotFound {
+		t.Errorf("скрыть то, чего нет: %v", err)
+	}
+	r.call(proto.MethodIncidentAction, proto.IncidentActionParams{ID: id, Action: proto.ActionHide}, nil)
+	r.waitState("карточка скрыта", func(st proto.State) bool { return len(st.Incidents) == 1 && st.Incidents[0].Hidden })
+	r.settle(100 * time.Millisecond)
+	if n := len(r.toasts); n != 2 || !r.toasts[1].Close || r.toasts[1].ID != id {
+		t.Errorf("уведомления: %+v", r.toasts)
+	}
+	r.shutdown()
+
+	r = startRigWith(t, paths, "ok", quickHealth)
+	r.settle(200 * time.Millisecond)
+	if len(r.last.Incidents) != 1 || !r.last.Incidents[0].Hidden {
+		t.Fatalf("после перезапуска: %+v", r.last.Incidents)
+	}
+
+	// Warnings about subscriptions off and on again: the closed one stays closed.
+	r.call(proto.MethodSettingsSet, proto.SettingsSetParams{Patch: []byte(`{"subWarnings":false}`)}, nil)
+	r.waitState("выключено", func(st proto.State) bool { return !st.Settings.SubWarnings })
+	if err := r.tryCall(proto.MethodSettingsSet, proto.SettingsSetParams{Patch: []byte(`{"serverWarnings":"нет"}`)}, nil); codeOf(err) != proto.CodeInvalidParams {
+		t.Errorf("негодное значение: %v", err)
+	}
+	r.call(proto.MethodSettingsSet, proto.SettingsSetParams{Patch: []byte(`{"subWarnings":true}`)}, nil)
+	r.waitState("включено", func(st proto.State) bool { return st.Settings.SubWarnings })
+	if !r.last.Incidents[0].Hidden {
+		t.Errorf("закрытая карточка вернулась: %+v", r.last.Incidents)
+	}
+}

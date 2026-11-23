@@ -516,6 +516,10 @@ func (d *Daemon) settingsSet(c rpcCall) (any, *proto.Error) {
 		switch key {
 		case "notify":
 			err = json.Unmarshal(raw, &next.Notify)
+		case "subWarnings":
+			err = json.Unmarshal(raw, &next.SubWarnings)
+		case "serverWarnings":
+			err = json.Unmarshal(raw, &next.ServerWarnings)
 		case "quietFullscreen":
 			err = json.Unmarshal(raw, &next.QuietFullscreen)
 		case "guard":
@@ -558,6 +562,9 @@ func (d *Daemon) settingsSet(c rpcCall) (any, *proto.Error) {
 	d.st.Guard.Enabled, d.st.Guard.AllowLAN = next.Guard, next.AllowLAN
 	if err := store.SaveJSON(d.opts.Paths.SettingsFile(), next); err != nil {
 		d.opts.Logf("saving the settings: %v", err)
+	}
+	if d.im.Mute(!next.SubWarnings, !next.ServerWarnings) {
+		d.st.Incidents = d.im.Incidents()
 	}
 	// These two are baked into the engine's config.
 	if next.IPv6 != prev.IPv6 || next.LocalProxyPort != prev.LocalProxyPort {

@@ -339,9 +339,12 @@ type IncidentActionParams struct {
 
 // Actions a toast or an incident can carry. open and dismiss are the
 // application's own; the rest go back to the daemon as incident.action.
+// hide is the window's cross on an incident's card: unlike dismiss, which
+// closes one toast, it puts the incident itself out of sight.
 const (
 	ActionOpen       = "open"
 	ActionDismiss    = "dismiss"
+	ActionHide       = "hide"
 	ActionRetry      = "retry"
 	ActionRelease    = "release"
 	ActionUpdateSubs = "update_subs"

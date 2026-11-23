@@ -160,11 +160,14 @@
       "title": "Интернет закрыт, чтобы трафик не пошёл мимо VPN",
       "body": "VPN не запускается: sing-box падает сразу после запуска. Подробности — в журнале.",
       "flaps": 0,
-      "unstable": false
+      "unstable": false,
+      "hidden": false
     }
   ],
   "settings": {
     "notify": "important",
+    "subWarnings": true,
+    "serverWarnings": true,
     "quietFullscreen": true,
     "guard": true,
     "allowLan": true,

@@ -233,6 +233,7 @@ export function crowd(state: State, now: number): State {
     body: 'Осталось 2 дня. Продли её у провайдера, иначе серверы перестанут работать.',
     flaps: 0,
     unstable: false,
+    hidden: false,
   };
   return { ...state, servers, subs: plans.map((p) => p.sub), incidents: [...state.incidents, incident] };
 }
