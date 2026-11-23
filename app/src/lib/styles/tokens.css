@@ -3,10 +3,13 @@
    first paint by index.html and afterwards by lib/theme.svelte.ts. */
 
 :root {
-  --bg: #0f1216;
-  --surface: #161a20;
-  --surface-2: #1d222a;
-  --line: #262c36;
+  --bg: #090b0e;
+  --surface: #101318;
+  --surface-2: #181c23;
+  --line: #21262e;
+  /* Home is the night sky: darker than the rest of the window, so the
+     stars have something to shine on. */
+  --sky: #05070a;
   --text: #e8ebf0;
   --muted: #8b94a3;
   --vpn: #3ddc97;
@@ -28,6 +31,12 @@
   /* What runs along the beam, and how visible the dots of the sea are. */
   --globe-spark: #ffffff;
   --globe-sea: 0.3;
+
+  /* The stars behind the globe: two tints, cold and warm, and how bright
+     the brightest of them is. 0 turns the sky off and stops its loop. */
+  --star-a: #dfe8ff;
+  --star-b: #ffe6c7;
+  --star-light: 0.85;
 
   /* The first family holds nothing but flag emoji and exists only where the
      system cannot draw them (see main.ts); everything else falls through. */
@@ -65,6 +74,7 @@
   --surface: #ffffff;
   --surface-2: #eceef2;
   --line: #dfe2e8;
+  --sky: #ffffff;
   --text: #14171c;
   --muted: #5d6675;
   /* Darker than the dark theme's: on white these colours are also text (a
@@ -85,6 +95,8 @@
   --globe-off-b: #7a64b8;
   --globe-spark: #14171c;
   --globe-sea: 0.38;
+  /* No stars by day: on white they read as specks of dust. */
+  --star-light: 0;
 
   --shadow-pop: 0 8px 28px rgb(20 23 28 / 0.14);
 

@@ -68,7 +68,8 @@
   {:else if daemon.state}
     <div class="body">
       <Nav {section} onselect={(next) => (section = next)} />
-      <main>
+      <!-- Home paints its sky up to the edges of the pane itself. -->
+      <main class:bleed={section === 'home'}>
         {#if section === 'home'}
           <Home state={daemon.state} onjournal={() => (section = 'journal')} onrules={() => (section = 'rules')} />
         {:else if section === 'servers'}
@@ -122,6 +123,10 @@
     min-width: 0;
     padding: 22px 26px;
     overflow-y: auto;
+  }
+
+  main.bleed {
+    padding: 0;
   }
 
   @media (max-height: 620px) {
