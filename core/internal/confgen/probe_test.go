@@ -19,7 +19,7 @@ import (
 // the Clash API tests them through.
 func TestProbeConfigTakesNoTraffic(t *testing.T) {
 	srv, _ := servers(t, true)
-	raw, err := BuildProbe(srv, "127.0.0.1:9090", "made-up-secret")
+	raw, err := BuildProbe(srv, "127.0.0.1:9090", "made-up-secret", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestProbeConfigTakesNoTraffic(t *testing.T) {
 	if socks == 0 {
 		t.Error("в тестовом наборе есть серверы Xray, а в конфиге их нет")
 	}
-	if _, err := BuildProbe(nil, "127.0.0.1:9090", "x"); err != ErrNoServers {
+	if _, err := BuildProbe(nil, "127.0.0.1:9090", "x", nil); err != ErrNoServers {
 		t.Errorf("пустой список: %v", err)
 	}
 }
@@ -79,7 +79,7 @@ func TestProbeConfigRunsInTheEngine(t *testing.T) {
 	srv, _ := servers(t, true)
 	port := freePort(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	raw, err := BuildProbe(srv, addr, "made-up-secret")
+	raw, err := BuildProbe(srv, addr, "made-up-secret", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

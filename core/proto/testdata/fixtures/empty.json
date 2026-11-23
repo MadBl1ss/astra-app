@@ -50,9 +50,11 @@
     "failover": false,
     "autoUpdateSubs": "12h",
     "localProxyPort": 0,
-    "startOnBoot": true
+    "startOnBoot": true,
+    "rating": true
   },
   "busy": null,
   "test": null,
-  "place": null
+  "place": null,
+  "speed": null
 }

@@ -40,6 +40,12 @@
     download: 'M10 3v9.500M6 8.500l4 4 4-4M4 16h12',
     power: 'M10 3v7M6.200 5.300a6 6 0 107.600 0',
     calendar: 'M5 4.500h10A1.500 1.500 0 0116.500 6v9a1.500 1.500 0 01-1.500 1.500H5A1.500 1.500 0 013.500 15V6A1.500 1.500 0 015 4.500zM3.500 8.500h13M7 3v3M13 3v3',
+    // A speedometer: the dial, and the needle well past the middle.
+    gauge: 'M3.500 14.500a6.500 6.500 0 1113 0M10 14.500l3.200-3.800M5.600 9.800l.900.600M10 7.500v1M14.400 9.800l-.900.600',
+    bolt: 'M11 2.500L5 11h4.500L9 17.500 15 9h-4.500z',
+    crown: 'M3.500 7l3.500 3L10 4.500 13 10l3.500-3L15 14.500H5zM5 16.500h10',
+    // A shield with a tick: steady over days.
+    steady: 'M10 2.500l6 2.700v4.300c0 3.400-2.400 6-6 7.500-3.600-1.500-6-4.100-6-7.500V5.200zM7.200 10l2 2 3.800-4',
   } as const;
 
   export type IconName = keyof typeof paths;

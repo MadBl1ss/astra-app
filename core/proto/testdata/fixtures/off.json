@@ -44,8 +44,15 @@
       "alive": true,
       "stats": {
         "avg": 91,
+        "jitter": 9,
         "loss": 0.02,
-        "samples": 340
+        "samples": 340,
+        "score": 79,
+        "trust": 0.92,
+        "days": 13,
+        "stable": true,
+        "speed": 84.3,
+        "speedAt": "2026-11-12T10:14:02Z"
       },
       "check": null
     },
@@ -64,8 +71,15 @@
       "alive": true,
       "stats": {
         "avg": 70,
+        "jitter": 8,
         "loss": 0.01,
-        "samples": 298
+        "samples": 298,
+        "score": 82,
+        "trust": 0.91,
+        "days": 11,
+        "stable": true,
+        "speed": 62.7,
+        "speedAt": "2026-11-12T10:14:02Z"
       },
       "check": null
     },
@@ -84,8 +98,15 @@
       "alive": true,
       "stats": {
         "avg": 52,
+        "jitter": 6,
         "loss": 0,
-        "samples": 120
+        "samples": 120,
+        "score": 84,
+        "trust": 0.81,
+        "days": 4,
+        "stable": true,
+        "speed": 118.4,
+        "speedAt": "2026-11-12T10:14:02Z"
       },
       "check": null
     },
@@ -139,7 +160,8 @@
     "failover": false,
     "autoUpdateSubs": "12h",
     "localProxyPort": 0,
-    "startOnBoot": true
+    "startOnBoot": true,
+    "rating": true
   },
   "busy": null,
   "test": null,
@@ -150,5 +172,6 @@
     "country": "RU",
     "source": "ip",
     "at": "2026-11-12T06:00:00Z"
-  }
+  },
+  "speed": null
 }

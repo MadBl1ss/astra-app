@@ -8,6 +8,7 @@ import {
   type MethodName,
   type Methods,
   type Mode,
+  type SpeedSample,
   type State,
   type Toast,
 } from './proto';
@@ -58,6 +59,7 @@ class Daemon {
   #seenAt = 0;
   #toast: ((t: Toast) => void) | null = null;
   #diag = new Set<(step: DiagStep) => void>();
+  #speed = new Set<(sample: SpeedSample) => void>();
 
   attach(transport: Transport): void {
     this.#transport = transport;
@@ -70,6 +72,7 @@ class Daemon {
     transport.on('connections', (list) => this.#measure(list));
     transport.on('toast', (t) => this.#toast?.(t));
     transport.on('diag', (step) => this.#diag.forEach((fn) => fn(step)));
+    transport.on('speed', (sample) => this.#speed.forEach((fn) => fn(sample)));
     transport.onStatus((status) => this.#onLink(status));
     this.#onLink(transport.status());
 
@@ -113,6 +116,7 @@ class Daemon {
       await transport.call('state.subscribe', { topics: ['state', 'journal', 'toast'] });
       if (this.#watchers > 0) await transport.call('state.subscribe', { topics: ['connections'] });
       if (this.#diag.size > 0) await transport.call('state.subscribe', { topics: ['diag'] });
+      if (this.#speed.size > 0) await transport.call('state.subscribe', { topics: ['speed'] });
       const page = await transport.call('journal.list', { limit: JOURNAL_KEEP });
       const known = new Set(page.entries.map((e) => e.id));
       this.journal = [...this.journal.filter((e) => !known.has(e.id)), ...page.entries]
@@ -233,6 +237,24 @@ class Daemon {
       if (!this.#diag.delete(handler) || this.#diag.size > 0) return;
       if (this.link === 'connected') {
         void this.#transport?.call('state.unsubscribe', { topics: ['diag'] }).catch(() => {});
+      }
+    };
+  }
+
+  /**
+   * Hears a speed test's needle, a few times a second, while somebody shows
+   * it. State says which server is measured and how it ended; this is the
+   * movement in between, too frequent for State.
+   */
+  watchSpeed(handler: (sample: SpeedSample) => void): () => void {
+    this.#speed.add(handler);
+    if (this.#speed.size === 1 && this.link === 'connected') {
+      void this.#transport?.call('state.subscribe', { topics: ['speed'] }).catch(() => {});
+    }
+    return () => {
+      if (!this.#speed.delete(handler) || this.#speed.size > 0) return;
+      if (this.link === 'connected') {
+        void this.#transport?.call('state.unsubscribe', { topics: ['speed'] }).catch(() => {});
       }
     };
   }

@@ -116,6 +116,9 @@ func (d *Daemon) serverTestStop() (any, *proto.Error) {
 	if d.test != nil {
 		d.endTest(d.test, proto.LevelInfo, "Проверка серверов остановлена.")
 	}
+	if d.speed != nil {
+		d.endSpeed(d.speed, proto.LevelInfo, "Замер скорости остановлен.")
+	}
 	return nil, nil
 }
 
@@ -172,15 +175,17 @@ func listOrder(p *profile.Profile) []string {
 	return out
 }
 
-// interruptTest ends a test whose engine is going away. A test on its own
-// engine survives the VPN's engine stopping, but not the VPN starting: the
-// new tunnel would take its connections and make the numbers about the
-// VPN's server rather than each server's own.
+// interruptTest ends a test, of servers or of speed, whose engine is going
+// away. A test on its own engine survives the VPN's engine stopping, but not
+// the VPN starting: the new tunnel would take its connections and make the
+// numbers about the VPN's server rather than each server's own.
 func (d *Daemon) interruptTest(starting bool, why string) {
-	if d.test == nil || (d.test.pub.Own && !starting) {
-		return
+	if d.test != nil && (!d.test.pub.Own || starting) {
+		d.endTest(d.test, proto.LevelInfo, "Проверка серверов прервана: "+why+".")
 	}
-	d.endTest(d.test, proto.LevelInfo, "Проверка серверов прервана: "+why+".")
+	if d.speed != nil && (!d.speed.pub.Own || starting) {
+		d.endSpeed(d.speed, proto.LevelInfo, "Замер скорости прерван: "+why+".")
+	}
 }
 
 // ---- the loop's side of a run --------------------------------------------
@@ -250,7 +255,7 @@ func (d *Daemon) endTest(run *testRun, level, what string) {
 
 func (d *Daemon) runTest(ctx context.Context, run *testRun, pool []string, api *clash.Client, spec *probeSpec) {
 	if spec != nil {
-		pe, err := d.startProbe(ctx, spec, func() {
+		pe, err := d.startProbe(ctx, spec, nil, func() {
 			d.post(func() {
 				d.endTest(run, proto.LevelProblem, "Проверка серверов прервана: проверочный движок остановился.")
 			})
@@ -357,8 +362,9 @@ type probeEngine struct {
 var probePolicy = engine.Policy{Delays: []time.Duration{time.Hour}, CrashLimit: 1, CrashWindow: time.Hour}
 
 // startProbe brings the test's own engines up and returns once they serve.
-// died is called if one of them stops on its own afterwards.
-func (d *Daemon) startProbe(ctx context.Context, spec *probeSpec, died func()) (*probeEngine, error) {
+// A speed test gives it a gate to serve too. died is called if one of them
+// stops on its own afterwards.
+func (d *Daemon) startProbe(ctx context.Context, spec *probeSpec, g *confgen.Gate, died func()) (*probeEngine, error) {
 	port, err := engine.FreePort()
 	if err != nil {
 		return nil, err
@@ -368,7 +374,7 @@ func (d *Daemon) startProbe(ctx context.Context, spec *probeSpec, died func()) (
 		return nil, err
 	}
 	controller := fmt.Sprintf("127.0.0.1:%d", port)
-	raw, err := confgen.BuildProbe(spec.servers, controller, secret)
+	raw, err := confgen.BuildProbe(spec.servers, controller, secret, g)
 	if err != nil {
 		return nil, err
 	}

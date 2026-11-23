@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +59,8 @@ const (
 	TUNName = "Strelka"
 	// DevProxyPort is the local proxy of a daemon run without TUN.
 	DevProxyPort = 20808
+	// GateTag is the inbound the daemon measures servers through, see Gate.
+	GateTag = "gate-in"
 )
 
 // ClashMode maps the protocol's mode to the Clash API's.
@@ -80,6 +83,35 @@ type Server struct {
 	Outbound json.RawMessage
 	// XrayPort is the local SOCKS port of a server that goes through Xray.
 	XrayPort int
+}
+
+// Gate is a local proxy for the daemon's own speed tests. Its user name
+// says which server a connection takes, so any server can be measured
+// while the selected one carries the user's traffic, and nothing else on
+// the machine can use it: the password is a fresh secret every start.
+type Gate struct {
+	Port     int
+	Password string
+}
+
+// GateUser is the user name that takes a server at the gate: the id in hex,
+// since an id may hold characters a proxy login cannot.
+func GateUser(id string) string { return hex.EncodeToString([]byte(id)) }
+
+// gate is the inbound and the route rules of a Gate: one rule per server,
+// then a refusal, so that a connection there never takes the user's route.
+// The rules go first: they look at nothing but the inbound and the user.
+func gate(g *Gate, servers []Server) (inbound map[string]any, rules []any) {
+	users := make([]any, 0, len(servers))
+	rules = make([]any, 0, len(servers)+1)
+	for _, s := range servers {
+		user := GateUser(s.ID)
+		users = append(users, map[string]any{"username": user, "password": g.Password})
+		rules = append(rules, map[string]any{"inbound": []any{GateTag}, "auth_user": []any{user}, "outbound": s.ID})
+	}
+	rules = append(rules, map[string]any{"inbound": []any{GateTag}, "action": "reject"})
+	inbound = map[string]any{"type": "mixed", "tag": GateTag, "listen": "127.0.0.1", "listen_port": g.Port, "users": users}
+	return inbound, rules
 }
 
 // Input is everything a config depends on.
@@ -111,6 +143,9 @@ type Input struct {
 
 	Controller string // Clash API address, host:port
 	Secret     string
+	// Gate is the proxy the daemon's speed tests go through; nil leaves it
+	// out. Like the Clash API it is per start.
+	Gate *Gate
 }
 
 // ExactPath is a process_path_regex that matches exactly one file. On
@@ -172,6 +207,12 @@ func Build(in Input) ([]byte, error) {
 		}
 		inbounds = append(inbounds, ib)
 	}
+	var gateRules []any
+	if in.Gate != nil {
+		var ib map[string]any
+		ib, gateRules = gate(in.Gate, in.Servers)
+		inbounds = append(inbounds, ib)
+	}
 	cfg["inbounds"] = inbounds
 
 	// Outbounds: the selector, the servers, direct.
@@ -208,7 +249,7 @@ func Build(in Input) ([]byte, error) {
 
 	// Route rules that depend on the input.
 	route := cfg["route"].(map[string]any)
-	var rules []any
+	rules := gateRules
 	for _, item := range route["rules"].([]any) {
 		r := item.(map[string]any)
 		switch marker(r) {
@@ -363,11 +404,12 @@ func lastLine(out []byte) string {
 
 // BuildProbe assembles the config of an engine that only tests servers: the
 // servers, the selector over them and "direct", the Clash API to ask, and
-// nothing else. No inbounds and no TUN, so it takes no traffic of anyone's;
-// no cache file and no rule sets, so it shares no file with the VPN's
-// engine. It answers delay tests while the VPN is off, and the user may
-// switch the VPN on meanwhile without the two getting in each other's way.
-func BuildProbe(servers []Server, controller, secret string) ([]byte, error) {
+// with a gate the speed tests' proxy, and nothing else. No TUN and no other
+// inbound, so it takes no traffic of anyone's; no cache file and no rule
+// sets, so it shares no file with the VPN's engine. It answers tests while
+// the VPN is off, and the user may switch the VPN on meanwhile without the
+// two getting in each other's way.
+func BuildProbe(servers []Server, controller, secret string, g *Gate) ([]byte, error) {
 	if len(servers) == 0 {
 		return nil, ErrNoServers
 	}
@@ -386,6 +428,11 @@ func BuildProbe(servers []Server, controller, secret string) ([]byte, error) {
 	}
 	outbounds[0] = map[string]any{"type": "selector", "tag": SelectorTag, "outbounds": tags, "default": servers[0].ID}
 	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": DirectTag})
+	route := map[string]any{
+		"final":                   DirectTag,
+		"auto_detect_interface":   true,
+		"default_domain_resolver": "dns-direct",
+	}
 	cfg := map[string]any{
 		"log": map[string]any{"level": "warn", "timestamp": true},
 		// The servers' own names are looked up by the system, as the VPN's
@@ -396,14 +443,15 @@ func BuildProbe(servers []Server, controller, secret string) ([]byte, error) {
 			"strategy": "ipv4_only",
 		},
 		"outbounds": outbounds,
-		"route": map[string]any{
-			"final":                   DirectTag,
-			"auto_detect_interface":   true,
-			"default_domain_resolver": "dns-direct",
-		},
+		"route":     route,
 		"experimental": map[string]any{
 			"clash_api": map[string]any{"external_controller": controller, "secret": secret, "default_mode": ClashRule},
 		},
+	}
+	if g != nil {
+		ib, rules := gate(g, servers)
+		cfg["inbounds"] = []any{ib}
+		route["rules"] = rules
 	}
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

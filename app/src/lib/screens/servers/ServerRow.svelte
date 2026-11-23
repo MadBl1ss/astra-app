@@ -1,9 +1,13 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte';
   import IconButton from '../../components/IconButton.svelte';
-  import Stability from '../../components/Stability.svelte';
+  import Popcard from '../../components/Popcard.svelte';
+  import RatingCard from '../../components/RatingCard.svelte';
+  import ScoreRing from '../../components/ScoreRing.svelte';
+  import { ago } from '../../format';
   import { ru } from '../../i18n/ru';
-  import type { Check, Server } from '../../proto';
+  import type { Check, Server, SpeedPhase } from '../../proto';
+  import { isReliable, mbpsText, tierOf } from '../../rating';
   import { protocolLabel, type PingView } from '../../servers';
   import { displayName, flagOf } from '../../view';
 
@@ -19,9 +23,14 @@
     shift = 0,
     dragging = false,
     grip = false,
+    best = false,
+    fast = false,
+    measuring = null,
+    now,
     onselect,
     onstar,
     onremove,
+    onmeasure,
     ongrip,
     onkeydown,
   }: {
@@ -36,16 +45,44 @@
     shift?: number;
     dragging?: boolean;
     grip?: boolean;
+    /** The highest score of all: a crown. */
+    best?: boolean;
+    /** Downloads about as fast as the fastest measured. */
+    fast?: boolean;
+    /** What a speed test is doing to this server right now. */
+    measuring?: SpeedPhase | null;
+    /** The clock for "measured 3 h ago". */
+    now: number;
     onselect: () => void;
     onstar: () => void;
     onremove?: () => void;
+    /** Measures this server's speed; absent while that cannot be done. */
+    onmeasure?: () => void;
     ongrip?: (event: PointerEvent) => void;
     onkeydown?: (event: KeyboardEvent) => void;
   } = $props();
 
   const t = ru.servers;
+  const r = ru.rating;
   const name = $derived(displayName(server));
   const flag = $derived(flagOf(server));
+  const stats = $derived(server.stats);
+  const tier = $derived(tierOf(stats));
+  const steady = $derived(isReliable(stats));
+  const ringLabel = $derived(
+    tier === 'none' ? r.labelNone : tier === 'new' ? r.labelNew : r.label(stats!.score, r.tiers[tier]),
+  );
+  const summary = $derived(
+    [
+      ringLabel,
+      stats && stats.avg > 0 ? `${r.ping} ${r.pingValue(stats.avg, stats.jitter)}` : '',
+      stats ? `${r.answers} ${r.answersValue(Math.round((1 - stats.loss) * 100))}` : '',
+      stats?.speed != null ? `${r.speed} ${mbpsText(stats.speed)} ${ru.speed.unit}` : '',
+      steady ? r.stable : '',
+    ]
+      .filter(Boolean)
+      .join('. '),
+  );
 </script>
 
 <li
@@ -66,8 +103,27 @@
     {#if selected}<span class="sr-only">{t.selected}:</span>{/if}
     <span class="flag">{flag ?? ''}</span>
     <span class="name" title={server.name !== name ? server.name : undefined}>{name}</span>
+    {#if best}
+      <span class="badge best" title={r.bestTitle}><Icon name="crown" size={12} />{r.best}</span>
+    {:else if steady}
+      <span class="badge" title={r.stableTitle}><Icon name="steady" size={12} />{r.stable}</span>
+    {/if}
+    <span class="speed" class:fast title={stats?.speed != null ? r.speedTitle(mbpsText(stats.speed), ago(stats.speedAt, now)) : undefined}>
+      {#if measuring}
+        <span class="needle" aria-hidden="true"><Icon name="gauge" size={14} /></span><span class="sr-only">{t.measuring}</span>
+      {:else if stats?.speed != null}
+        {#if fast}<Icon name="bolt" size={12} />{/if}{mbpsText(stats.speed)}<span class="unit">{ru.speed.unit}</span>
+      {/if}
+    </span>
     <span class="proto" title={server.via === 'xray' ? `${protocolLabel(server)}, ${t.viaXray}` : undefined}>{protocolLabel(server)}</span>
-    <Stability stats={server.stats} />
+    <Popcard summary={summary}>
+      {#snippet trigger()}
+        <ScoreRing {stats} label={ringLabel} />
+      {/snippet}
+      {#snippet card()}
+        {#if stats}<RatingCard {stats} {now} {best} />{:else}<p class="nostats">{r.labelNone}</p>{/if}
+      {/snippet}
+    </Popcard>
     {#if check === 'queued'}
       <span class="ping" title={t.checkQueued}><span class="slot" aria-hidden="true"></span><span class="sr-only">{t.checkQueued}</span></span>
     {:else if check === 'running'}
@@ -78,6 +134,13 @@
       <span class="ping {ping.tone}" class:fresh title={ping.title}>{ping.text}</span>
     {/if}
   </button>
+  <span class="act" class:shown={measuring !== null}>
+    {#if onmeasure}
+      <IconButton icon="gauge" label={t.measure(name)} onclick={onmeasure} />
+    {:else}
+      <span class="gap"></span>
+    {/if}
+  </span>
   <IconButton
     icon="star"
     fill={server.favorite}
@@ -199,6 +262,91 @@
     width: 52px;
     color: var(--muted);
     font-size: var(--fs-cap);
+  }
+
+  /* A word after the name that the eye can catch in a long list: the best
+     server, or one that has been steady for days. */
+  .badge {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    padding: 0 7px 0 5px;
+    border: 1px solid color-mix(in srgb, var(--vpn) 40%, transparent);
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--vpn) 8%, transparent);
+    color: var(--vpn);
+    font-size: 11px;
+    line-height: 17px;
+    animation: badge 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .badge.best {
+    border-color: color-mix(in srgb, var(--vpn) 70%, transparent);
+    background: color-mix(in srgb, var(--vpn) 14%, transparent);
+  }
+
+  @keyframes badge {
+    from {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+  }
+
+  .speed {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    width: 86px;
+    color: var(--muted);
+    font-size: var(--fs-cap);
+    white-space: nowrap;
+  }
+
+  .speed.fast {
+    color: var(--vpn);
+  }
+
+  .unit {
+    margin-left: 3px;
+    opacity: 0.75;
+  }
+
+  /* The server a speed test is on: the dial's needle swings. */
+  .needle {
+    display: inline-flex;
+    color: var(--text);
+    animation: swing 0.9s ease-in-out infinite alternate;
+  }
+
+  @keyframes swing {
+    from {
+      transform: rotate(-18deg);
+    }
+    to {
+      transform: rotate(14deg);
+    }
+  }
+
+  /* The measure button shows on hover and focus only: a list of a hundred
+     gauges would be noise. */
+  .act {
+    display: inline-flex;
+    flex: none;
+    opacity: 0;
+    transition: opacity var(--fast);
+  }
+
+  .row:hover .act,
+  .act:focus-within,
+  .act.shown {
+    opacity: 1;
+  }
+
+  .nostats {
+    color: var(--muted);
   }
 
   .ping {

@@ -149,6 +149,9 @@ func goldenCases(t *testing.T) []goldenCase {
 	v4only.IPv6 = "block"
 	v4only.StrictRoute = false
 
+	withGate, gateXray := base(t, true, "t-DE", "t-LV")
+	withGate.Gate = &Gate{Port: 2090, Password: "made-up-gate-secret"}
+
 	return []goldenCase{
 		{"one_server", one, nil},
 		{"xray_servers", withXray, xs},
@@ -156,6 +159,7 @@ func goldenCases(t *testing.T) []goldenCase {
 		{"local_proxy", localProxy, nil},
 		{"no_tun", noTUN, nil},
 		{"ipv6_block", v4only, nil},
+		{"gate", withGate, gateXray},
 	}
 }
 

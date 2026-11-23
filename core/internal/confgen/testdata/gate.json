@@ -1,0 +1,271 @@
+{
+  "dns": {
+    "final": "dns-direct",
+    "rules": [
+      {
+        "rule_set": "servers-dns",
+        "server": "dns-direct"
+      },
+      {
+        "rule_set": "direct-dns",
+        "server": "dns-direct"
+      },
+      {
+        "clash_mode": "Global",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": "vpn-dns",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": [
+          "itdog-inside",
+          "itdog-google-ai"
+        ],
+        "server": "dns-proxy"
+      }
+    ],
+    "servers": [
+      {
+        "tag": "dns-direct",
+        "type": "local"
+      },
+      {
+        "detour": "proxy",
+        "server": "1.1.1.1",
+        "tag": "dns-proxy",
+        "type": "https"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "cache.db"
+    },
+    "clash_api": {
+      "default_mode": "Rule",
+      "external_controller": "127.0.0.1:9090",
+      "secret": "made-up-secret"
+    }
+  },
+  "http_clients": [
+    {
+      "detour": "proxy",
+      "tag": "rule-sets"
+    }
+  ],
+  "inbounds": [
+    {
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "interface_name": "Strelka",
+      "mtu": 9000,
+      "stack": "mixed",
+      "strict_route": true,
+      "tag": "tun-in",
+      "type": "tun"
+    },
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2090,
+      "tag": "gate-in",
+      "type": "mixed",
+      "users": [
+        {
+          "password": "made-up-gate-secret",
+          "username": "742d4445"
+        },
+        {
+          "password": "made-up-gate-secret",
+          "username": "742d4c56"
+        }
+      ]
+    }
+  ],
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "outbounds": [
+    {
+      "default": "t-DE",
+      "interrupt_exist_connections": true,
+      "outbounds": [
+        "t-DE",
+        "t-LV"
+      ],
+      "tag": "proxy",
+      "type": "selector"
+    },
+    {
+      "type": "vless",
+      "tag": "t-DE",
+      "server": "de.example.com",
+      "server_port": 443,
+      "uuid": "11111111-1111-4111-8111-111111111111",
+      "tls": {
+        "enabled": true,
+        "server_name": "de.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws"
+      },
+      "packet_encoding": "xudp"
+    },
+    {
+      "server": "127.0.0.1",
+      "server_port": 17400,
+      "tag": "t-LV",
+      "type": "socks",
+      "version": "5"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct",
+    "default_http_client": "rule-sets",
+    "final": "direct",
+    "rule_set": [
+      {
+        "path": "rules/direct.json",
+        "tag": "direct",
+        "type": "local"
+      },
+      {
+        "path": "rules/direct-dns.json",
+        "tag": "direct-dns",
+        "type": "local"
+      },
+      {
+        "path": "rules/vpn.json",
+        "tag": "vpn",
+        "type": "local"
+      },
+      {
+        "path": "rules/vpn-dns.json",
+        "tag": "vpn-dns",
+        "type": "local"
+      },
+      {
+        "path": "rules/servers-dns.json",
+        "tag": "servers-dns",
+        "type": "local"
+      },
+      {
+        "format": "binary",
+        "initial_path": "rules/itdog-inside.srs",
+        "tag": "itdog-inside",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/russia_inside.srs"
+      },
+      {
+        "format": "binary",
+        "initial_path": "rules/itdog-google-ai.srs",
+        "tag": "itdog-google-ai",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/google_ai.srs"
+      }
+    ],
+    "rules": [
+      {
+        "auth_user": [
+          "742d4445"
+        ],
+        "inbound": [
+          "gate-in"
+        ],
+        "outbound": "t-DE"
+      },
+      {
+        "auth_user": [
+          "742d4c56"
+        ],
+        "inbound": [
+          "gate-in"
+        ],
+        "outbound": "t-LV"
+      },
+      {
+        "action": "reject",
+        "inbound": [
+          "gate-in"
+        ]
+      },
+      {
+        "mode": "and",
+        "outbound": "direct",
+        "rules": [
+          {
+            "inbound": "tun-in"
+          },
+          {
+            "rule_set": "direct"
+          },
+          {
+            "invert": true,
+            "port": 53
+          }
+        ],
+        "type": "logical"
+      },
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "outbound": "direct",
+        "process_path_regex": [
+          "(?i)^C:\\\\Program Files\\\\Strelka\\\\xray\\.exe$"
+        ]
+      },
+      {
+        "domain": [
+          "ip-api.com"
+        ],
+        "outbound": "direct",
+        "process_path_regex": [
+          "(?i)^C:\\\\Program Files\\\\Strelka\\\\strelkad\\.exe$"
+        ]
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "outbound": "direct",
+        "rule_set": "direct"
+      },
+      {
+        "clash_mode": "Global",
+        "outbound": "proxy"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": "vpn"
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": [
+          "itdog-inside",
+          "itdog-google-ai"
+        ]
+      }
+    ]
+  }
+}

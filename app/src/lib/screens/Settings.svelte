@@ -293,6 +293,11 @@
           <Switch size="sm" label={t.failover} checked={shown.failover} onchange={(on) => set('failover', on)} />
         {/snippet}
       </SettingRow>
+      <SettingRow label={t.rating} note={t.ratingNote} error={errors.rating}>
+        {#snippet children()}
+          <Switch size="sm" label={t.rating} checked={shown.rating} onchange={(on) => set('rating', on)} />
+        {/snippet}
+      </SettingRow>
     </div>
   </section>
 

@@ -281,6 +281,7 @@ func (d *Daemon) tick() {
 	if wall.Sub(d.subsChecked) >= time.Hour {
 		d.checkSubs()
 	}
+	d.autoRate(wall)
 	if d.statsDirty && wall.Sub(d.statsSaved) >= 10*time.Minute {
 		d.saveStats(wall)
 	}
@@ -433,7 +434,7 @@ func (d *Daemon) others(except string, n int) []string {
 	for _, s := range d.prof.Servers {
 		rest = append(rest, s.ID)
 	}
-	for _, id := range d.stats.Order(rest) {
+	for _, id := range d.stats.Order(rest, time.Now()) {
 		add(id)
 	}
 	return pool

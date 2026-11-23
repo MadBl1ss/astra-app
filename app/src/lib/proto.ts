@@ -20,7 +20,7 @@ export type Verdict =
   | 'engine_failed'
   | 'helper_down';
 
-export type Busy = 'starting' | 'stopping' | 'updating_subs' | 'testing';
+export type Busy = 'starting' | 'stopping' | 'updating_subs' | 'testing' | 'measuring';
 export type Severity = 'critical' | 'problem' | 'info';
 
 export type IncidentKind =
@@ -77,6 +77,8 @@ export interface State {
   busy: Busy | null;
   /** The server test under way; null when there is none. */
   test: TestRun | null;
+  /** The speed test under way; null when there is none. */
+  speed: SpeedRun | null;
   /** Where the computer is, for the globe on Home; null while not known. */
   place: Place | null;
 }
@@ -97,6 +99,73 @@ export interface TestRun {
 
 /** Where a server is in the test under way. */
 export type Check = 'queued' | 'running' | 'done';
+
+/** A speed test: one server after another, pinged and made to download. */
+export interface SpeedRun {
+  started: string;
+  /** "preparing": the test's own engine is coming up (the VPN is off). */
+  stage: 'preparing' | 'testing';
+  own: boolean;
+  /** In the order they are measured. */
+  ids: string[];
+  /** The server being measured and what is done to it; null between servers. */
+  current: string | null;
+  phase: SpeedPhase | null;
+  /** Measured so far, in order. */
+  results: SpeedResult[];
+  /** The bounds of one download. */
+  maxBytes: number;
+  maxSeconds: number;
+}
+
+export type SpeedPhase = 'ping' | 'download';
+
+export interface SpeedResult {
+  id: string;
+  /** The middle of its pings; null: it did not answer. */
+  ping: number | null;
+  jitter: number | null;
+  /** Mbit/s; null: the download failed. */
+  mbps: number | null;
+  /** Traffic the download took. */
+  bytes: number;
+  /** Why a number is missing, ready for the user. */
+  error: string | null;
+}
+
+/** The "speed" notification: the server being measured, a few times a second. */
+export interface SpeedSample {
+  id: string;
+  phase: SpeedPhase;
+  /** The ping that has just come, in the ping phase; null: no answer. */
+  ping: number | null;
+  /** In the download phase: Mbit/s over the last moments, bytes so far, ms since the first byte. */
+  mbps: number;
+  bytes: number;
+  elapsed: number;
+}
+
+/** What the daemon has learnt about a server over time. */
+export interface ServerStats {
+  /** Typical delay, ms; 0 when it never answered. */
+  avg: number;
+  /** How much the delay wobbles around that, ms. */
+  jitter: number;
+  /** Share of checks without an answer, 0..1. */
+  loss: number;
+  samples: number;
+  /** Delay, wobble, answers and speed together, 0..100. */
+  score: number;
+  /** 0..1: how much of the score is evidence; little evidence scores near 50. */
+  trust: number;
+  /** Days with answers in the last two weeks. */
+  days: number;
+  /** Answers nearly always, evenly, on several days. */
+  stable: boolean;
+  /** Typical download speed, Mbit/s; null until measured. */
+  speed: number | null;
+  speedAt: string | null;
+}
 
 export interface Place {
   lat: number;
@@ -123,7 +192,7 @@ export interface Server {
   ping: number | null;
   pingAt: string | null;
   alive: boolean;
-  stats: { avg: number; loss: number; samples: number } | null;
+  stats: ServerStats | null;
   /** Only while a test runs and the server is part of it. */
   check: Check | null;
 }
@@ -163,6 +232,8 @@ export interface Settings {
   autoUpdateSubs: 'off' | '6h' | '12h' | '24h';
   localProxyPort: number;
   startOnBoot: boolean;
+  /** While the VPN works, a few servers are pinged now and then to keep their rating fresh. */
+  rating: boolean;
 }
 
 export type JournalCat = 'vpn' | 'server' | 'subs' | 'rules' | 'guard' | 'system';
@@ -205,7 +276,7 @@ export interface Connection {
   started: string;
 }
 
-export type Topic = 'state' | 'journal' | 'traffic' | 'connections' | 'toast' | 'log' | 'diag';
+export type Topic = 'state' | 'journal' | 'traffic' | 'connections' | 'toast' | 'log' | 'diag' | 'speed';
 
 export type DiagStepName = 'network' | 'internet' | 'dns' | 'engine' | 'server' | 'site';
 
@@ -318,7 +389,10 @@ export interface Methods {
   };
   /** ids are tested in this order; without them every server, in the list's order. */
   'server.test': { params: { ids?: string[] }; result: Empty };
+  /** Stops a speed test too. */
   'server.testStop': { params: undefined; result: Empty };
+  /** One server at a time, at most 12; without ids the selected one. */
+  'server.speedTest': { params: { ids?: string[] }; result: Empty };
   'server.favorite': { params: { id: string; favorite: boolean }; result: Empty };
   'server.reorder': { params: { ids: string[] }; result: Empty };
   'server.remove': { params: { id: string }; result: Empty };
@@ -357,6 +431,7 @@ export interface Notifications {
   toast: Toast;
   log: { t: string; source: 'sing-box' | 'xray' | 'strelkad'; level: string; line: string };
   diag: DiagStep;
+  speed: SpeedSample;
 }
 
 export type NotificationName = keyof Notifications;

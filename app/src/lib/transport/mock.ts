@@ -19,6 +19,8 @@ import {
   type Rules,
   type Server,
   type Settings,
+  type SpeedResult,
+  type SpeedSample,
   type Severity,
   type State,
   type Toast,
@@ -26,6 +28,7 @@ import {
 } from '../proto';
 import { mock as text } from '../i18n/ru';
 import {
+  answered,
   ConnectionMaker,
   KEY,
   MANY,
@@ -102,6 +105,12 @@ const PREPARE_MS = 800;
 const TEST_WORKERS = 16;
 const TEST_ALIVE_MS = [250, 1300] as const;
 const TEST_DEAD_MS = 3000;
+// A speed test: pings, then a download of a few seconds, one server at a
+// time; shorter than the daemon's eight seconds, enough to watch.
+const SPEED_MAX = 12;
+const SPEED_DEAD_MS = 1600;
+const SPEED_DOWNLOAD_S = 3.6;
+const SPEED_GAP_MS = 450;
 
 // What the direct path carries in the fake world, bytes per second.
 const DIRECT = { down: 4_400_000, up: 245_000 };
@@ -258,7 +267,10 @@ export class MockTransport implements Transport {
         return this.#test(p.ids as string[] | undefined);
       case 'server.testStop':
         this.#endTest(text.testStopped);
+        this.#endSpeed(text.speedStopped);
         return {};
+      case 'server.speedTest':
+        return this.#speedTest(p.ids as string[] | undefined);
       case 'server.favorite':
         this.#favorite(p.id as string, p.favorite as boolean);
         return {};
@@ -501,6 +513,7 @@ export class MockTransport implements Transport {
   #jobBusy(): void {
     if (this.#state.busy === 'updating_subs') throw new RpcError(ErrorCode.busy, text.subsBusy);
     if (this.#state.busy === 'testing') throw new RpcError(ErrorCode.busy, text.testBusy);
+    if (this.#state.busy === 'measuring') throw new RpcError(ErrorCode.busy, text.speedBusy);
   }
 
   // The run under way; a stop or a newer run replaces it, and its timers go
@@ -558,9 +571,9 @@ export class MockTransport implements Transport {
         if (answers) {
           s.test!.alive++;
           if (!this.#still) x.ping = Math.max(8, Math.round(x.ping! * (0.9 + Math.random() * 0.2)));
-          x.stats = x.stats ? { ...x.stats, samples: x.stats.samples + 1 } : { avg: x.ping!, loss: 0, samples: 1 };
-        } else if (x.stats) {
-          x.stats = { ...x.stats, samples: x.stats.samples + 1 };
+          x.stats = answered(x.stats, x.ping!);
+        } else {
+          x.stats = answered(x.stats, null);
         }
         this.#touch();
         next();
@@ -579,6 +592,165 @@ export class MockTransport implements Transport {
       begin();
     }
     return {};
+  }
+
+  // ---- the speed test ----
+
+  #speedRun: { timers: Set<ReturnType<typeof setTimeout>>; interval: ReturnType<typeof setInterval> | null } | null = null;
+
+  /** What a server downloads at in the fake world: steady per server, none for a silent one. */
+  #speedOf(x: Server): number | null {
+    if (!x.alive || x.ping === null) return null;
+    let h = 0;
+    for (const c of x.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return Math.round((14 + (h % 1000) / 1000 * 150) * 10) / 10;
+  }
+
+  #speedTest(ids?: string[]): object {
+    const s = this.#state;
+    this.#jobBusy();
+    if (s.vpn.phase === 'starting' || s.vpn.phase === 'recovering') throw new RpcError(ErrorCode.busy, text.testWhileStarting);
+    if (s.vpn.phase === 'stopping') throw new RpcError(ErrorCode.busy, text.testWhileStopping);
+    const pool = ids && ids.length > 0 ? [...new Set(ids)] : s.server.selected ? [s.server.selected] : [];
+    if (pool.length === 0) throw new RpcError(ErrorCode.noServers, text.noServers);
+    if (pool.length > SPEED_MAX) throw new RpcError(ErrorCode.invalid, text.speedTooMany(SPEED_MAX));
+    for (const id of pool) {
+      if (!s.servers.some((x) => x.id === id)) throw new RpcError(ErrorCode.notFound, text.noSuchServer);
+    }
+    const own = s.vpn.phase !== 'on';
+    const run = { timers: new Set<ReturnType<typeof setTimeout>>(), interval: null as ReturnType<typeof setInterval> | null };
+    this.#speedRun = run;
+    s.busy = 'measuring';
+    s.speed = {
+      started: now(),
+      stage: own ? 'preparing' : 'testing',
+      own,
+      ids: pool,
+      current: null,
+      phase: null,
+      results: [],
+      maxBytes: 25 * 1024 * 1024,
+      maxSeconds: 8,
+    };
+    this.#touch();
+
+    const later = (ms: number, fn: () => void) => {
+      const timer = setTimeout(() => {
+        run.timers.delete(timer);
+        if (this.#speedRun === run) fn();
+      }, ms);
+      run.timers.add(timer);
+    };
+    const emit = (sample: SpeedSample) => {
+      if (this.#topics.has('speed')) this.#listeners.emit('speed', sample);
+    };
+
+    const measure = (i: number): void => {
+      const id = pool[i];
+      if (id === undefined) return this.#endSpeed(null);
+      const x = s.servers.find((y) => y.id === id)!;
+      const target = this.#speedOf(x);
+      s.speed!.current = id;
+      s.speed!.phase = 'ping';
+      this.#touch();
+      const pings: number[] = [];
+      const ping = (k: number): void => {
+        if (k === 3 || (k === 1 && pings.length === 0)) return afterPings();
+        later(target === null ? SPEED_DEAD_MS : 220 + Math.random() * 120, () => {
+          const ms = target === null ? null : Math.max(8, Math.round((x.ping ?? 80) * (0.92 + Math.random() * 0.16)));
+          if (ms !== null) pings.push(ms);
+          emit({ id, phase: 'ping', ping: ms, mbps: 0, bytes: 0, elapsed: 0 });
+          ping(k + 1);
+        });
+      };
+      const afterPings = (): void => {
+        if (pings.length === 0 || target === null) {
+          return done({ id, ping: null, jitter: null, mbps: null, bytes: 0, error: text.speedSilent }, null);
+        }
+        const sorted = [...pings].sort((a, b) => a - b);
+        const mid = sorted[1] ?? sorted[0]!;
+        const jitter = Math.round(sorted.reduce((sum, v) => sum + Math.abs(v - mid), 0) / sorted.length);
+        s.speed!.phase = 'download';
+        this.#touch();
+        const started = Date.now();
+        let bytes = 0;
+        let last = started;
+        let settled = 0;
+        let settledFrom = 0;
+        run.interval = setInterval(() => {
+          if (this.#speedRun !== run) return;
+          const t = Date.now();
+          const el = (t - started) / 1000;
+          // A connection that speeds up and wobbles, the way a real one does.
+          const rate = target * (1 - Math.exp(-el / 0.55)) * (1 + 0.07 * Math.sin(el * 7.3) + (Math.random() - 0.5) * 0.08);
+          bytes += ((rate * 1e6) / 8) * ((t - last) / 1000);
+          last = t;
+          if (el > 0.8) {
+            settled += rate;
+            settledFrom++;
+          }
+          emit({ id, phase: 'download', ping: null, mbps: Math.round(rate * 10) / 10, bytes: Math.round(bytes), elapsed: t - started });
+          if (el >= SPEED_DOWNLOAD_S) {
+            clearInterval(run.interval!);
+            run.interval = null;
+            const mbps = Math.round((settled / Math.max(1, settledFrom)) * 10) / 10;
+            done({ id, ping: mid, jitter, mbps, bytes: Math.round(bytes), error: null }, pings);
+          }
+        }, 120);
+      };
+      const done = (result: SpeedResult, got: number[] | null): void => {
+        s.speed!.results = [...s.speed!.results, result];
+        s.speed!.current = null;
+        s.speed!.phase = null;
+        x.pingAt = now();
+        if (got && result.ping !== null) {
+          x.alive = true;
+          x.ping = result.ping;
+          for (const ms of got) x.stats = answered(x.stats, ms);
+        } else {
+          x.alive = false;
+          x.stats = answered(x.stats, null);
+        }
+        if (result.mbps !== null && x.stats) {
+          const prev = x.stats.speed;
+          const speed = prev === null ? result.mbps : Math.round(Math.sqrt(prev * result.mbps) * 10) / 10;
+          x.stats = { ...answered({ ...x.stats, samples: x.stats.samples - 1, speed, speedAt: now() }, x.ping) };
+        }
+        this.#touch();
+        later(SPEED_GAP_MS, () => measure(i + 1));
+      };
+      ping(0);
+    };
+
+    if (own) {
+      later(PREPARE_MS, () => {
+        s.speed!.stage = 'testing';
+        this.#touch();
+        measure(0);
+      });
+    } else {
+      later(200, () => measure(0));
+    }
+    return {};
+  }
+
+  /** Ends the speed test; lead is null for one that got through every server. */
+  #endSpeed(lead: string | null): void {
+    const s = this.#state;
+    const run = this.#speedRun;
+    if (!run || !s.speed) return;
+    for (const timer of run.timers) clearTimeout(timer);
+    if (run.interval) clearInterval(run.interval);
+    this.#speedRun = null;
+    let best: SpeedResult | null = null;
+    for (const r of s.speed.results) if (r.mbps !== null && (best === null || r.mbps > best.mbps!)) best = r;
+    const name = best ? (s.servers.find((x) => x.id === best!.id)?.name ?? best.id) : '';
+    const summary = best ? text.speedBest(name, best.mbps!) : lead === null ? text.speedNone : '';
+    const line = [lead, summary].filter(Boolean).join(' ');
+    if (line) this.#log('server', 'info', line);
+    s.speed = null;
+    if (s.busy === 'measuring') s.busy = null;
+    this.#touch();
   }
 
   /** The window's order: favourites, each subscription, servers by link. */

@@ -45,6 +45,7 @@ type rig struct {
 	last    proto.State
 	journal []proto.JournalEntry
 	toasts  []proto.Toast
+	speed   []proto.SpeedSample // the "speed" notifications, once subscribed
 
 	// network reports a change of the default route to the daemon, in place
 	// of the real monitor: up is a network with both IPv4 and IPv6.
@@ -253,6 +254,12 @@ func (r *rig) waitState(what string, ok func(proto.State) bool) []string {
 					r.t.Fatalf("запись журнала не разобрана: %v", err)
 				}
 				r.journal = append(r.journal, e)
+			case proto.TopicSpeed:
+				var sample proto.SpeedSample
+				if err := json.Unmarshal(n.Params, &sample); err != nil {
+					r.t.Fatalf("отсчёт замера не разобран: %v", err)
+				}
+				r.speed = append(r.speed, sample)
 			case proto.TopicToast:
 				var toast proto.Toast
 				if err := json.Unmarshal(n.Params, &toast); err != nil {
