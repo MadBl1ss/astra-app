@@ -8,6 +8,7 @@
   import ListRow from '../components/ListRow.svelte';
   import Segments from '../components/Segments.svelte';
   import Select, { type SelectItem } from '../components/Select.svelte';
+  import Starfield from '../components/Starfield.svelte';
   import Switch from '../components/Switch.svelte';
   import { clock, speed } from '../format';
   import { countryPlace, homePlace, type Place } from '../globe/places';
@@ -153,14 +154,6 @@
 </script>
 
 <div class="home" class:strip={strip !== null}>
-  <header class="status">
-    <span class="dot {picture.tone}" aria-hidden="true"></span>
-    <div class="grow">
-      <h1>{picture.word}</h1>
-      <p>{picture.sub}</p>
-    </div>
-  </header>
-
   {#if strip}
     <Banner tone={strip.tone} title={strip.title} body={strip.body}>
       {#snippet actions()}
@@ -171,7 +164,22 @@
     </Banner>
   {/if}
 
-  <section class="hero">
+  <section class="hero {picture.tone}">
+    <Starfield active={watched} />
+
+    <!-- The state is told above the globe, in the globe's own colours: the
+         word, the ball, its glow and the ring of the button read as one. -->
+    <header class="status">
+      <h1>{picture.word}</h1>
+      {#if picture.facts}
+        <p class="facts">
+          {#each picture.facts as fact, i (i)}<span>{fact}</span>{/each}
+        </p>
+      {:else}
+        <p title={picture.sub}>{picture.sub}</p>
+      {/if}
+    </header>
+
     <div class="side">
       <Fork vpn={picture.vpnRail} direct={picture.directRail} gate={picture.gate} tone={picture.tone} {vpnStat} {directStat} />
     </div>
@@ -290,55 +298,9 @@
     min-height: 100%;
   }
 
-  .status {
-    display: flex;
-    align-items: center;
-    gap: var(--s4);
-  }
-
   .grow {
     flex: 1;
     min-width: 0;
-  }
-
-  h1 {
-    font: 600 var(--fs-state) / 1.15 var(--font-display);
-    letter-spacing: -0.01em;
-  }
-
-  .status p {
-    margin-top: 3px;
-    color: var(--muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .dot {
-    flex: none;
-    width: 10px;
-    height: 10px;
-    margin-top: 2px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: background var(--slow);
-  }
-
-  .dot.ok {
-    background: var(--vpn);
-  }
-
-  .dot.busy,
-  .dot.warn {
-    background: var(--warn);
-  }
-
-  .dot.bad {
-    background: var(--bad);
-  }
-
-  .dot.busy {
-    animation: pulse 1.2s ease-in-out infinite;
   }
 
   @keyframes pulse {
@@ -347,24 +309,124 @@
     }
   }
 
+  /* The two colours of the state, the same pair the globe is washed with.
+     Registered, so that the word and the glow drift to a new state as the
+     globe does, instead of jumping. */
+  @property --a {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #808080;
+  }
+
+  @property --b {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #808080;
+  }
+
   /* The globe takes what the window has left: its side follows the height
      of the window, and gives way when the window is narrow. */
   .hero {
-    --globe: clamp(200px, min(100vh - 300px, 100vw - 580px), 380px);
+    --globe: clamp(200px, min(100vh - 330px, 100vw - 580px), 380px);
+    --a: var(--globe-off-a);
+    --b: var(--globe-off-b);
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     flex: 1;
     display: grid;
     grid-template-columns: minmax(150px, 1fr) var(--globe) minmax(220px, 1fr);
+    grid-template-rows: auto 1fr;
     align-items: center;
-    gap: var(--s4);
-    min-height: 224px;
-    padding: var(--s3) var(--s4);
+    gap: 0 var(--s4);
+    min-height: 280px;
+    padding: var(--s4) var(--s4) var(--s3);
     border: 1px solid var(--line);
     border-radius: var(--r-card);
-    background: var(--surface);
+    background: var(--sky);
+    transition:
+      --a 350ms ease,
+      --b 350ms ease;
+  }
+
+  .hero.ok {
+    --a: var(--globe-ok-a);
+    --b: var(--globe-ok-b);
+  }
+
+  .hero.busy,
+  .hero.warn {
+    --a: var(--globe-warn-a);
+    --b: var(--globe-warn-b);
+  }
+
+  .hero.bad {
+    --a: var(--globe-bad-a);
+    --b: var(--globe-bad-b);
   }
 
   .strip .hero {
-    --globe: clamp(200px, min(100vh - 362px, 100vw - 580px), 380px);
+    --globe: clamp(200px, min(100vh - 392px, 100vw - 580px), 380px);
+  }
+
+  .hero > :global(canvas) {
+    z-index: -1;
+  }
+
+  .status {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    text-align: center;
+  }
+
+  /* The word is painted with the state's gradient: it is large enough that
+     3:1 is the bar, and every pair of --globe-* clears it on --sky. */
+  h1 {
+    max-width: 100%;
+    padding: 0 2px;
+    font: 600 var(--fs-state) / 1.15 var(--font-display);
+    letter-spacing: -0.01em;
+    background: linear-gradient(100deg, var(--a), var(--b)) 0 0 / 100% 100%;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* While something is on its way the light runs along the word, at the
+     pace the globe's continents breathe. */
+  .busy h1 {
+    background-image: linear-gradient(100deg, var(--a) 20%, var(--b) 50%, var(--a) 80%);
+    background-size: 200% 100%;
+    animation: shimmer 2.4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  .status p {
+    max-width: min(100%, 560px);
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .facts span + span::before {
+    content: '·';
+    margin: 0 7px;
+    opacity: 0.6;
   }
 
   .side {
@@ -385,6 +447,36 @@
     width: min(100cqw, 100cqh);
     height: min(100cqw, 100cqh);
     transform: translate(-50%, -50%);
+  }
+
+  /* The air round the ball glows with the state; the ball itself covers
+     the middle of the glow, so only a rim of light is left round it. */
+  .disc::before {
+    content: '';
+    position: absolute;
+    inset: -12%;
+    z-index: -1;
+    border-radius: 50%;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--a) 30%, transparent) 62%,
+      color-mix(in srgb, var(--b) 10%, transparent) 78%,
+      transparent
+    );
+  }
+
+  :global([data-theme='light']) .disc::before {
+    opacity: 0.6;
+  }
+
+  .busy .disc::before {
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    50% {
+      opacity: 0.45;
+    }
   }
 
   /* The button sits on the lower edge of the globe: the canvas draws the
@@ -421,7 +513,7 @@
     background: var(--surface-2);
   }
 
-  /* The ring is the colour of the state, as the dot by the heading is; the
+  /* The ring is the colour of the state, as the word above the globe is; the
      button itself stays neutral and says only "asked to be on". */
   .knob[aria-checked='true'] {
     color: var(--text);

@@ -30,7 +30,7 @@ function ratio(a, b) {
 // Text colours and the surfaces they sit on. --line is not text: borders
 // need 3:1 only against what they separate, and they are decoration here.
 const texts = ['text', 'muted', 'vpn', 'warn', 'bad', 'direct'];
-const grounds = ['bg', 'surface', 'surface-2'];
+const grounds = ['bg', 'sky', 'surface', 'surface-2'];
 let failed = 0;
 for (const [name, theme] of [
   ['тёмная', dark],

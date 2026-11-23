@@ -69,7 +69,7 @@
     a: Rgb;
     b: Rgb;
     spark: Rgb;
-    /** The colour of the card behind the globe. */
+    /** The colour of the sky behind the globe. */
     bed: Rgb;
     sea: number;
   }
@@ -89,7 +89,7 @@
       a: hex(css.getPropertyValue(`--globe-${family}-a`), grey),
       b: hex(css.getPropertyValue(`--globe-${family}-b`), grey),
       spark: hex(css.getPropertyValue('--globe-spark'), [255, 255, 255]),
-      bed: hex(css.getPropertyValue('--surface'), [0, 0, 0]),
+      bed: hex(css.getPropertyValue('--sky'), [0, 0, 0]),
       sea: Number(css.getPropertyValue('--globe-sea')) || 0.2,
     };
     known = { key, colors };
@@ -321,6 +321,12 @@
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.clearRect(0, 0, w, h);
+    // The ball is solid: the stars of the sky behind it must not show
+    // through its translucent body.
+    ctx.fillStyle = rgba(want.bed, 1);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, TAU);
+    ctx.fill();
     ctx.drawImage(layer, 0, 0);
 
     const project = (p: Vec3, lift: number): [number, number, boolean] => {

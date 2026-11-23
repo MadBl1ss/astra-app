@@ -21,6 +21,8 @@ export interface Picture {
   tone: Tone;
   word: string;
   sub: string;
+  /** The same line as separate figures, where it is a list of them: Home sets them apart. */
+  facts?: string[];
   tray: TrayIcon;
   /** The switch shows what the user asked for, not what the engine does. */
   wantOn: boolean;
@@ -89,7 +91,7 @@ export function describe(s: State, now: number): Picture {
       const parts = [name];
       if (s.server.ping !== null) parts.push(t.units.ms(s.server.ping));
       if (s.vpn.since) parts.push(t.state.uptime(duration(since(s.vpn.since, now))));
-      return { ...base, tone: 'ok', word: t.state.ok, sub: parts.join(' · '), tray: 'on', vpnRail: 'flow', directRail: 'flow' };
+      return { ...base, tone: 'ok', word: t.state.ok, sub: parts.join(' · '), facts: parts, tray: 'on', vpnRail: 'flow', directRail: 'flow' };
     }
     case 'settling':
       return { ...base, tone: 'busy', word: t.state.starting, sub: t.state.settlingSub(name), tray: 'connecting', vpnRail: 'waiting', directRail: 'flow' };
