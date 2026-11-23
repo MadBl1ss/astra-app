@@ -314,6 +314,10 @@ func New(opts Options) (*Daemon, error) {
 	if warned, err := store.LoadJSON(opts.Paths.WarnedFile(), map[string]string{}); err == nil {
 		d.im.SetWarned(warned)
 	}
+	if hidden, err := store.LoadJSON(opts.Paths.HiddenFile(), map[string]string{}); err == nil {
+		d.im.SetHidden(hidden)
+	}
+	d.im.Mute(!d.st.Settings.SubWarnings, !d.st.Settings.ServerWarnings)
 	d.srv = ipc.NewServer(d.handle)
 	d.sup = d.supervise(boxName, d.prepareBox)
 	d.xsup = d.supervise(xrayName, d.prepareXray)

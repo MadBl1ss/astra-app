@@ -160,11 +160,14 @@
       "title": "Сервер DE-2 не отвечает",
       "body": "Интернет есть, другие серверы работают.",
       "flaps": 0,
-      "unstable": false
+      "unstable": false,
+      "hidden": false
     }
   ],
   "settings": {
     "notify": "important",
+    "subWarnings": true,
+    "serverWarnings": true,
     "quietFullscreen": true,
     "guard": true,
     "allowLan": true,

@@ -260,7 +260,11 @@ func status(ctx context.Context, c *ipc.Client, hello proto.HelloResult) error {
 	fmt.Printf("Замок:   %s\n", guardLine(st.Guard))
 	fmt.Printf("Место:   %s\n", placeLine(st.Place))
 	for _, inc := range st.Incidents {
-		fmt.Printf("Инцидент %s [%s]: %s. %s\n", inc.ID, inc.Severity, inc.Title, inc.Body)
+		hidden := ""
+		if inc.Hidden {
+			hidden = ", скрыт"
+		}
+		fmt.Printf("Инцидент %s [%s%s]: %s. %s\n", inc.ID, inc.Severity, hidden, inc.Title, inc.Body)
 	}
 	for _, e := range es.Engines {
 		if e.Running {

@@ -43,6 +43,8 @@
   "incidents": [],
   "settings": {
     "notify": "important",
+    "subWarnings": true,
+    "serverWarnings": true,
     "quietFullscreen": true,
     "guard": true,
     "allowLan": true,

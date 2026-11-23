@@ -36,6 +36,9 @@ func (p Paths) PlaceFile() string { return filepath.Join(p.Data, "place.json") }
 // WarnedFile remembers which subscription warnings were already shown.
 func (p Paths) WarnedFile() string { return filepath.Join(p.Data, "warned.json") }
 
+// HiddenFile remembers which subscription warnings the user closed.
+func (p Paths) HiddenFile() string { return filepath.Join(p.Data, "hidden.json") }
+
 // RulesDir holds the rule-set files; the engine's config names them
 // relative to the data folder.
 func (p Paths) RulesDir() string   { return filepath.Join(p.Data, "rules") }

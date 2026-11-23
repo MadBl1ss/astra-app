@@ -137,6 +137,8 @@ export class MockTransport implements Transport {
   #journal: JournalEntry[] = [];
   #journalId = 9100;
   #incidentSeq = 7;
+  /** Cards the user closed. */
+  #closed = new Set<string>();
   #timers = new Set<ReturnType<typeof setTimeout>>();
   #conns: Connection[] = [];
   #connCount: number;
@@ -311,7 +313,7 @@ export class MockTransport implements Transport {
         this.#applySettings(p.patch as Partial<Settings>);
         return {};
       case 'incident.action':
-        this.#action(p.action as string);
+        this.#action(p.id as string, p.action as string);
         return {};
       case 'journal.list': {
         const limit = Math.min((p.limit as number | undefined) ?? 100, 500);
@@ -486,6 +488,7 @@ export class MockTransport implements Transport {
         body: text.serverDownBody,
         flaps: 0,
         unstable: false,
+        hidden: !s.settings.serverWarnings,
       };
       s.health = { ...s.health, verdict: 'server_down', since: now(), hint: text.serverDownHint };
       s.incidents = [...s.incidents, incident];
@@ -1013,13 +1016,14 @@ export class MockTransport implements Transport {
       s.guard.engaged = true;
     }
     if (patch.guard !== undefined) this.#log('guard', 'info', patch.guard ? text.guardOn : text.guardOff);
+    if (patch.subWarnings !== undefined || patch.serverWarnings !== undefined) this.#seeHidden();
     this.#touch();
     // These two are baked into the engine's config.
     const rebuild = before.ipv6 !== s.settings.ipv6 || before.localProxyPort !== s.settings.localProxyPort;
     if (rebuild && s.vpn.phase === 'on') this.#start();
   }
 
-  #action(action: string): void {
+  #action(id: string, action: string): void {
     const s = this.#state;
     if (action.startsWith('switch:')) return this.#select(action.slice('switch:'.length));
     switch (action) {
@@ -1035,12 +1039,37 @@ export class MockTransport implements Transport {
       case 'update_subs':
         void this.#updateSubs(undefined).catch(() => {});
         return;
+      case 'hide':
+        return this.#hide(id);
       case 'open':
       case 'dismiss':
         return;
       default:
         throw new RpcError(ErrorCode.invalidParams, text.unknownMethod);
     }
+  }
+
+  /** The cross on a card, as the daemon takes it. */
+  #hide(id: string): void {
+    const s = this.#state;
+    const incident = s.incidents.find((i) => i.id === id);
+    if (!incident) throw new RpcError(ErrorCode.notFound, text.hideGone);
+    if (incident.severity === 'critical') throw new RpcError(ErrorCode.invalid, text.hideCritical);
+    this.#closed.add(id);
+    this.#toast({ id, severity: 'info', title: '', body: '', actions: [], sticky: false, close: true });
+    this.#seeHidden();
+  }
+
+  /** hidden from the cards closed and the warnings turned off. */
+  #seeHidden(): void {
+    const s = this.#state;
+    const muted = (kind: string) =>
+      kind.startsWith('sub_') ? !s.settings.subWarnings : kind === 'server_down' || kind === 'all_servers_down' ? !s.settings.serverWarnings : false;
+    s.incidents = s.incidents.map((i) => ({
+      ...i,
+      hidden: i.severity !== 'critical' && (this.#closed.has(i.id) || muted(i.kind)),
+    }));
+    this.#touch();
   }
 
   // ---- plumbing ----

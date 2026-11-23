@@ -220,10 +220,16 @@ export interface Incident {
   body: string;
   flaps: number;
   unstable: boolean;
+  /** No card for it: the user closed the card or turned such warnings off. Never on a critical one. */
+  hidden: boolean;
 }
 
 export interface Settings {
   notify: 'all' | 'important' | 'silent';
+  /** Warnings about subscriptions that end or ran out; off - the journal only. */
+  subWarnings: boolean;
+  /** Warnings that a server does not answer; off - the journal only. */
+  serverWarnings: boolean;
   quietFullscreen: boolean;
   guard: boolean;
   allowLan: boolean;
@@ -351,7 +357,8 @@ export interface EngineVersion {
 }
 
 /** What the application may send as incident.action. */
-export type IncidentAction = `switch:${string}` | 'retry' | 'update_subs' | 'release';
+/** hide is the cross on a card: the daemon puts the incident out of sight. */
+export type IncidentAction = `switch:${string}` | 'retry' | 'update_subs' | 'release' | 'hide';
 
 export const ErrorCode = {
   methodNotFound: -32601,

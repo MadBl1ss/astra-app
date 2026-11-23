@@ -8,6 +8,7 @@
 package incident
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -101,6 +102,9 @@ type episode struct {
 	told     bool
 	// quietEnd: the daemon already dealt with it (failover); its end is not news.
 	quietEnd bool
+	// hidden: the user closed its card. It stays out of sight till its end,
+	// unless it turns critical.
+	hidden bool
 	// calm: "ok" has been seen since the last trouble.
 	calm  bool
 	toast string // what the last toast said, to tell an update from a repeat
@@ -120,10 +124,38 @@ type Manager struct {
 
 	subs   map[string]*subIncident
 	warned map[string]string
+	// hidden: subscriptions whose card the user closed, with the state it
+	// was closed in (the same key as warned).
+	hidden map[string]string
+
+	// The kinds of warnings the user turned off in the settings.
+	muteSubs, muteServers bool
 }
 
 func New(t health.Tuning) *Manager {
-	return &Manager{t: t, subs: map[string]*subIncident{}, warned: map[string]string{}}
+	return &Manager{t: t, subs: map[string]*subIncident{}, warned: map[string]string{}, hidden: map[string]string{}}
+}
+
+// Mute turns kinds of warnings off: the daemon passes the opposite of
+// settings.subWarnings and settings.serverWarnings. It reports whether the
+// list for State.incidents has changed.
+func (m *Manager) Mute(subs, servers bool) bool {
+	if m.muteSubs == subs && m.muteServers == servers {
+		return false
+	}
+	m.muteSubs, m.muteServers = subs, servers
+	return true
+}
+
+// muted: warnings of this kind are off.
+func (m *Manager) muted(kind string) bool {
+	switch kind {
+	case proto.IncidentSubExpiring, proto.IncidentSubExpired, proto.IncidentSubTraffic:
+		return m.muteSubs
+	case proto.VerdictServerDown, proto.VerdictAllServersDown:
+		return m.muteServers
+	}
+	return false
 }
 
 // SeedID continues the numbering after an id found in the journal, so two
@@ -316,6 +348,11 @@ func (m *Manager) update(now time.Time, in Input, out *Output) {
 		e.quietEnd = false
 	}
 	e.kind, e.server, e.title, e.body = kind, in.Server, title, body
+	if e.hidden && severity(kind) == proto.SeverityCritical {
+		// Closed as a dead server, it is now why the internet is off: that
+		// is news again, card and toast.
+		e.hidden, e.told = false, false
+	}
 	if carded(kind) && !e.listed {
 		e.listed = true
 	}
@@ -328,7 +365,7 @@ func (m *Manager) update(now time.Time, in Input, out *Output) {
 // time it is a problem worth a toast, and afterwards only to replace the
 // toast that is already out.
 func (m *Manager) announce(e *episode, in Input, out *Output) {
-	if in.Level == proto.NotifySilent {
+	if in.Level == proto.NotifySilent || m.muted(e.kind) {
 		return
 	}
 	if !e.notified && (e.told || !carded(e.kind)) {
@@ -389,6 +426,7 @@ func (m *Manager) Incidents() []proto.Incident {
 		inc := proto.Incident{
 			ID: e.id, Kind: e.kind, Severity: severity(e.kind), Opened: e.opened.UTC().Truncate(time.Second),
 			Title: e.title, Body: e.body, Flaps: e.flaps, Unstable: e.unstable,
+			Hidden: severity(e.kind) != proto.SeverityCritical && (e.hidden || m.muted(e.kind)),
 		}
 		if e.server.ID != "" && (e.kind == proto.VerdictServerDown || e.kind == proto.VerdictDegraded) {
 			id := e.server.ID
@@ -406,6 +444,7 @@ func (m *Manager) Incidents() []proto.Incident {
 		out = append(out, proto.Incident{
 			ID: s.id, Kind: s.kind, Severity: proto.SeverityProblem, Opened: s.opened.UTC().Truncate(time.Second),
 			Title: s.title, Body: s.body,
+			Hidden: m.muteSubs || m.hidden[id] == s.key,
 		})
 	}
 	return out
@@ -430,6 +469,7 @@ type SubStatus struct {
 
 type subIncident struct {
 	id, kind    string
+	key         string // the state and the term it is about, see subKey
 	opened      time.Time
 	title, body string
 	notified    bool
@@ -467,17 +507,19 @@ func (m *Manager) Subs(now time.Time, level string, list []SubStatus) Output {
 				}
 			}
 			delete(m.warned, s.ID)
+			delete(m.hidden, s.ID)
 			continue
 		}
 		title, body := describeSub(kind, s, now)
+		key := subKey(kind, s)
 		if have != nil && have.kind == kind {
-			if have.title != title || have.body != body { // "осталось 2 дня" became "1 день"
-				have.title, have.body = title, body
+			if have.title != title || have.body != body || have.key != key { // "осталось 2 дня" became "1 день"
+				have.title, have.body, have.key = title, body, key
 				out.Changed = true
 			}
 			continue
 		}
-		inc := &subIncident{kind: kind, opened: now, title: title, body: body}
+		inc := &subIncident{kind: kind, key: key, opened: now, title: title, body: body}
 		if have != nil {
 			inc.id, inc.notified = have.id, have.notified
 		} else {
@@ -488,16 +530,12 @@ func (m *Manager) Subs(now time.Time, level string, list []SubStatus) Output {
 
 		// The same state of the same term is told once, however many times
 		// the daemon starts while it lasts.
-		key := kind
-		if s.ExpireAt != nil {
-			key += "|" + s.ExpireAt.UTC().Format("2006-01-02")
-		}
 		if m.warned[s.ID] == key {
 			continue
 		}
 		m.warned[s.ID] = key
 		out.Journal = append(out.Journal, Entry{Cat: proto.CatSubs, Level: proto.LevelProblem, Text: sentence(title, body), Incident: inc.id})
-		if level != proto.NotifySilent {
+		if level != proto.NotifySilent && !m.muteSubs {
 			inc.notified = true
 			out.Toasts = append(out.Toasts, proto.Toast{
 				ID: inc.id, Severity: proto.SeverityProblem, Title: title, Body: body,
@@ -509,6 +547,7 @@ func (m *Manager) Subs(now time.Time, level string, list []SubStatus) Output {
 		if !present[id] { // the subscription was removed; so is its trouble
 			delete(m.subs, id)
 			delete(m.warned, id)
+			delete(m.hidden, id)
 			out.Changed = true
 			if have.notified {
 				out.Toasts = append(out.Toasts, proto.Toast{ID: have.id, Actions: []proto.ToastAction{}, Close: true})
@@ -516,6 +555,78 @@ func (m *Manager) Subs(now time.Time, level string, list []SubStatus) Output {
 		}
 	}
 	return out
+}
+
+// subKey names a subscription's state together with its term: a card closed
+// for "ends on the 24th" comes back for "has ended", or for a new term.
+func subKey(kind string, s SubStatus) string {
+	key := kind
+	if s.ExpireAt != nil {
+		key += "|" + s.ExpireAt.UTC().Format("2006-01-02")
+	}
+	return key
+}
+
+// Errors of Hide.
+var (
+	ErrNoIncident = errors.New("no such open incident")
+	ErrCritical   = errors.New("a critical incident stays in sight")
+)
+
+// Hide takes the card of an open incident out of sight: the user has seen
+// it and closed it. Its toast goes too, and no more toasts follow about it
+// unless it turns critical. A critical incident cannot be hidden: it is why
+// the internet is off.
+func (m *Manager) Hide(id string) (Output, error) {
+	var out Output
+	if e := m.cur; e != nil && e.id == id && e.listed {
+		if severity(e.kind) == proto.SeverityCritical {
+			return out, ErrCritical
+		}
+		if e.hidden {
+			return out, nil
+		}
+		e.hidden, e.told = true, true
+		if e.notified {
+			out.Toasts = append(out.Toasts, proto.Toast{ID: e.id, Actions: []proto.ToastAction{}, Close: true})
+			e.notified, e.toast = false, ""
+		}
+		out.Changed = true
+		return out, nil
+	}
+	for subID, s := range m.subs {
+		if s.id != id {
+			continue
+		}
+		if m.hidden[subID] == s.key {
+			return out, nil
+		}
+		m.hidden[subID] = s.key
+		if s.notified {
+			out.Toasts = append(out.Toasts, proto.Toast{ID: s.id, Actions: []proto.ToastAction{}, Close: true})
+			s.notified = false
+		}
+		out.Changed = true
+		return out, nil
+	}
+	return out, ErrNoIncident
+}
+
+// Hidden is which subscription cards the user closed; like Warned, the
+// daemon keeps it across restarts through SetHidden.
+func (m *Manager) Hidden() map[string]string {
+	out := make(map[string]string, len(m.hidden))
+	for k, v := range m.hidden {
+		out[k] = v
+	}
+	return out
+}
+
+func (m *Manager) SetHidden(h map[string]string) {
+	m.hidden = map[string]string{}
+	for k, v := range h {
+		m.hidden[k] = v
+	}
 }
 
 // Warned is what has been announced about each subscription; the daemon
