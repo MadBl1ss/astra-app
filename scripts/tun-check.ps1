@@ -66,7 +66,7 @@ function Save-Report {
     Write-Host "Отчёт: $report"
 }
 
-Say "Проверка Стрелки с TUN, $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss')"
+Say "Проверка Astra с TUN, $(Get-Date -Format 'dd.MM.yyyy HH:mm:ss')"
 Say ''
 
 if (-not (Test-Path -LiteralPath $ctl)) {

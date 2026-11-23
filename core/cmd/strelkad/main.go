@@ -61,7 +61,7 @@ func realMain(args []string) int {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `Служба Стрелки.
+	fmt.Fprint(os.Stderr, `Служба Astra.
 
   strelkad run --data ПАПКА --engines ПАПКА [--no-tun] [--no-guard] [--no-locate] [--pipe ИМЯ]
   strelkad service install [--data ПАПКА] [--engines ПАПКА] [--pipe ИМЯ] [--no-tun] [--no-guard] [--no-locate]
@@ -89,7 +89,7 @@ func usage() {
   guard test   поставить фильтры замка на время и снять: проверка самих фильтров.
                ВНИМАНИЕ: на это время интернет закрыт у всего, кроме локальной сети, —
                и у другого VPN тоже. Нужны права администратора
-  guard reset  убрать все фильтры Стрелки, даже если служба не запущена
+  guard reset  убрать все фильтры Astra, даже если служба не запущена
 `)
 }
 

@@ -47,7 +47,7 @@ $root = Split-Path -Parent $PSScriptRoot
 if (-not $Version) {
     $Version = (Get-Content -Raw -Encoding UTF8 (Join-Path $root 'app\package.json') | ConvertFrom-Json).version
 }
-Write-Host "Стрелка $Version"
+Write-Host "Astra $Version"
 
 # 1. The daemon.
 $bin = Join-Path $root 'bin'
@@ -109,7 +109,7 @@ try {
 }
 
 $nsis = Join-Path $root 'app\src-tauri\target\release\bundle\nsis'
-$installer = Join-Path $nsis "Strelka_${Version}_x64-setup.exe"
+$installer = Join-Path $nsis "Astra_${Version}_x64-setup.exe"
 if (-not (Test-Path -LiteralPath $installer)) { throw "Нет установщика $installer" }
 Write-Host ("Установщик: {0} ({1:N1} МБ)" -f $installer, ((Get-Item -LiteralPath $installer).Length / 1MB))
 

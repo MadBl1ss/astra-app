@@ -124,8 +124,8 @@ try {
     # and where the sources of the very versions shipped live go along.
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'licenses\GPL-3.0.txt') -Destination (Join-Path $stage 'out\licenses\GPL-3.0.txt')
     $lines = @(
-        'Движки в составе Стрелки — отдельные программы со своими лицензиями.'
-        'Стрелка запускает их как есть, без изменений.'
+        'Движки в составе Astra — отдельные программы со своими лицензиями.'
+        'Astra запускает их как есть, без изменений.'
         ''
     )
     foreach ($e in $pins) {
@@ -136,7 +136,7 @@ try {
         $lines += "  выпуск: $($e.archive.url)"
         $lines += ''
     }
-    $lines += 'Сама Стрелка — MIT (strelka-LICENSE.txt), исходный код: https://github.com/MadBl1ss/strelka-app'
+    $lines += 'Сама Astra — MIT (astra-LICENSE.txt), исходный код: https://github.com/MadBl1ss/astra-app'
     [IO.File]::WriteAllLines((Join-Path $stage 'out\licenses\SOURCES.txt'), [string[]]$lines, [Text.UTF8Encoding]::new($true))
 
     New-Item -ItemType Directory -Force -Path $Target | Out-Null

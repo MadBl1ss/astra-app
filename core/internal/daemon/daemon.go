@@ -904,7 +904,7 @@ func (d *Daemon) fail(reason, text string) {
 func failText(reason string) string {
 	switch reason {
 	case engine.FailMissing:
-		return "Не хватает файлов Стрелки: нет движка sing-box. Переустанови приложение."
+		return "Не хватает файлов Astra: нет движка sing-box. Переустанови приложение."
 	case engine.FailConfig:
 		return "Движок не принял настройки VPN. Подробности — в журнале."
 	case engine.FailCrashLoop:

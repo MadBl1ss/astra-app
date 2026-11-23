@@ -27,7 +27,7 @@ pub fn build(app: &AppHandle) -> bool {
         builder = builder.additional_browser_args(args);
     }
     let built = builder
-        .title("Strelka")
+        .title("Astra")
         .decorations(false)
         .transparent(true)
         // Windows 11 would outline the transparent rectangle; the cards

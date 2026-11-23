@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
+import { MARK_W, markElements } from '../src/lib/mark.ts';
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'src-tauri', 'icons');
 
@@ -15,33 +16,42 @@ const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'src-tauri', 'ic
 // taskbar, not in the window, and has to read on both light and dark ones.
 const C = { vpn: '#3ddc97', off: '#8b94a3', warn: '#f5b84b', bad: '#f2555a', ink: '#0f1216' };
 
-const SHIELD = 'M16 1.5 28.5 7v8.5c0 7.2-5 12.4-12.500 15-7.500-2.600-12.500-7.800-12.500-15V7z';
+// The mark sits on a rounded plate: a plate in the state's colour reads at
+// 16 px where the mark's own cuts no longer do, and the colour is what the
+// tray icon is looked at for.
+const PLATE = '<rect x="1" y="1" width="30" height="30" rx="7"';
 
-// What is drawn inside the shield. The state is never told by colour alone.
+// The mark in a box of `w` px whose top-left corner is at (x, y).
+function mark(id, fill, x, y, w) {
+  return `<g transform="translate(${x} ${y}) scale(${w / MARK_W})">${markElements(id, fill)}</g>`;
+}
+
+// What is drawn on the plate. The state is never told by colour alone.
 const glyphs = {
-  // The arrow: the points of a railway switch, and the app's name.
-  arrow: `<path d="M9.500 18.500 16 12l6.500 6.500" fill="none" stroke="${C.ink}" stroke-width="3.400" stroke-linecap="round" stroke-linejoin="round"/>`,
+  // Raised a little: a triangle's weight is in its base.
+  mark: mark('m', C.ink, 4, 7, 24),
   bang: `<path d="M16 8.500v8.500" fill="none" stroke="${C.ink}" stroke-width="3.600" stroke-linecap="round"/><circle cx="16" cy="22.500" r="2.100" fill="${C.ink}"/>`,
   lock: `<rect x="9.500" y="14.500" width="13" height="9.500" rx="2" fill="${C.ink}"/><path d="M12.200 14.500v-2.300a3.800 3.800 0 017.600 0v2.300" fill="none" stroke="${C.ink}" stroke-width="2.600"/>`,
 };
 
 const tray = {
-  on: { fill: C.vpn, glyph: 'arrow' },
-  off: { fill: C.off, glyph: 'arrow' },
-  connecting: { fill: C.warn, glyph: 'arrow' },
+  on: { fill: C.vpn, glyph: 'mark' },
+  off: { fill: C.off, glyph: 'mark' },
+  connecting: { fill: C.warn, glyph: 'mark' },
   // The second frame of the pulse.
-  'connecting-dim': { fill: C.warn, glyph: 'arrow', opacity: 0.45 },
+  'connecting-dim': { fill: C.warn, glyph: 'mark', opacity: 0.45 },
   problem: { fill: C.warn, glyph: 'bang' },
-  down: { fill: C.bad, glyph: 'arrow' },
+  down: { fill: C.bad, glyph: 'mark' },
   blocked: { fill: C.bad, glyph: 'lock' },
 };
 
 function traySvg({ fill, glyph, opacity = 1 }) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g opacity="${opacity}"><path d="${SHIELD}" fill="${fill}"/>${glyphs[glyph]}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g opacity="${opacity}">${PLATE} fill="${fill}"/>${glyphs[glyph]}</g></svg>`;
 }
 
-// The application icon: the same shield on a dark rounded plate.
-const appSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#161a20"/><g transform="translate(8 8)"><path d="${SHIELD}" fill="${C.vpn}"/>${glyphs.arrow}</g></svg>`;
+// The application icon: the white mark on a dark plate with a green glow,
+// the look of the brand's pictures.
+const appSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><radialGradient id="glow" cx="0.85" cy="0.95" r="0.9"><stop offset="0" stop-color="${C.vpn}" stop-opacity="0.45"/><stop offset="1" stop-color="${C.vpn}" stop-opacity="0"/></radialGradient></defs><rect width="48" height="48" rx="10" fill="#10161a"/><rect width="48" height="48" rx="10" fill="url(#glow)"/>${mark('a', '#fff', 7, 12, 34)}</svg>`;
 
 function png(svg, size) {
   return new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng();

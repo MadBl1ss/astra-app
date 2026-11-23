@@ -2,30 +2,30 @@
 
 <img src="app/src-tauri/icons/128x128.png" width="88" alt="">
 
-# Стрелка
+# Astra
 
 **Умный VPN для Windows: включается в один клик и сам знает, что пускать через VPN.**<br>
 Списки заблокированного уже внутри — всё остальное идёт напрямую, на полной скорости.
 
-[![Выпуск](https://img.shields.io/github/v/release/MadBl1ss/strelka-app?label=%D0%B2%D1%8B%D0%BF%D1%83%D1%81%D0%BA&color=3ddc97)](https://github.com/MadBl1ss/strelka-app/releases/latest)
-[![CI](https://github.com/MadBl1ss/strelka-app/actions/workflows/ci.yml/badge.svg)](https://github.com/MadBl1ss/strelka-app/actions/workflows/ci.yml)
+[![Выпуск](https://img.shields.io/github/v/release/MadBl1ss/astra-app?label=%D0%B2%D1%8B%D0%BF%D1%83%D1%81%D0%BA&color=3ddc97)](https://github.com/MadBl1ss/astra-app/releases/latest)
+[![CI](https://github.com/MadBl1ss/astra-app/actions/workflows/ci.yml/badge.svg)](https://github.com/MadBl1ss/astra-app/actions/workflows/ci.yml)
 [![Лицензия: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 
-[**Скачать**](https://github.com/MadBl1ss/strelka-app/releases/latest) · [Установка](#установка) · [Как устроена](#как-устроена) · [Сборка](#сборка-из-исходников) · [**English**](#english)
+[**Скачать**](https://github.com/MadBl1ss/astra-app/releases/latest) · [Установка](#установка) · [Как устроена](#как-устроена) · [Сборка](#сборка-из-исходников) · [**English**](#english)
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset=".github/assets/home-light.png">
-  <img src=".github/assets/home-dark.png" width="820" alt="Главный экран Стрелки: VPN включён, развилка «через VPN» и «напрямую», глобус с лучом к серверу, сервер, режим и замок">
+  <img src=".github/assets/home-dark.png" width="820" alt="Главный экран Astra: VPN включён, развилка «через VPN» и «напрямую», глобус с лучом к серверу, сервер, режим и замок">
 </picture>
 
 </div>
 
-## Почему Стрелка
+## Почему Astra
 
-**Включил — и забыл.** Стрелка сама разводит трафик: что заблокировано —
+**Включил — и забыл.** Astra сама разводит трафик: что заблокировано —
 через VPN, всё остальное — напрямую, без потери скорости. Ни правил
 маршрутизации, ни geo-файлов, ни конфигов.
 
@@ -61,7 +61,7 @@ WhatsApp, Discord и Spotify сразу идут через VPN.
 
 **Плавно, без переподключений**<br>
 Сервер, режим и правила меняются на лету — VPN не перезапускается. Мигнула
-сеть — Стрелка отличит это от аварии и не будет тревожить зря.
+сеть — Astra отличит это от аварии и не будет тревожить зря.
 
 </td>
 </tr>
@@ -110,7 +110,7 @@ Windows не выпускает его мимо VPN, пока тот перез�
 - **TUN.** Перехватывается весь трафик системы, а не только программы,
   которые слушаются системного прокси.
 - **Замок (kill switch)** на Windows Filtering Platform. Пока VPN должен
-  работать, в сеть выходят только движки и служба Стрелки; роутер, принтер
+  работать, в сеть выходят только движки и служба Astra; роутер, принтер
   и другие домашние устройства остаются доступны.
 - **DNS и IPv6** идут через туннель; IPv6 можно и заблокировать, если у
   сервера его нет.
@@ -124,7 +124,7 @@ Windows не выпускает его мимо VPN, пока тот перез�
 - **Диагнозы**: сервер не отвечает, все серверы не отвечают, нет интернета,
   нет сети, соединение нестабильно, движок перезапускается — каждый со своим
   текстом и советом.
-- **Запасной сервер**: если выбранный перестал отвечать, Стрелка
+- **Запасной сервер**: если выбранный перестал отвечать, Astra
   переключится на первый работающий из избранных. Порядок избранных
   задаёшь перетаскиванием.
 - **Свои уведомления** с кнопками действий. Можно оставить только проблемы
@@ -139,7 +139,7 @@ Windows не выпускает его мимо VPN, пока тот перез�
   **REALITY** и **XHTTP**), **Trojan**, **Shadowsocks**, **Hysteria2**.
 - Подходит и ссылка, которую бот провайдера даёт для Happ, v2RayTun, Hiddify,
   INCY и других приложений, и короткая ссылка на страницу подписки с
-  кнопками «Добавить в …»: Стрелка достаёт из них адрес подписки.
+  кнопками «Добавить в …»: Astra достаёт из них адрес подписки.
   Зашифрованную ссылку Happ прочитать нельзя — для неё попроси у провайдера
   обычную.
 - Остаток трафика и срок подписки с предупреждением, когда они на исходе.
@@ -150,12 +150,12 @@ Windows не выпускает его мимо VPN, пока тот перез�
   оценка остаётся скромной, пока он не докажет своё. Серверы, которые
   отвечают почти всегда и ровно уже несколько дней, помечены
   «стабильный»; три лучших — карточками над списком. Пока VPN работает,
-  Стрелка раз в 45 минут тихо пингует избранные, лучшие и давно не
+  Astra раз в 45 минут тихо пингует избранные, лучшие и давно не
   проверенные серверы, чтобы оценка оставалась свежей.
 - **Замер скорости**: три пинга и скачивание на несколько секунд через
   каждый выбранный сервер по очереди, со спидометром и итогом «быстрее
   всех». Замер идёт мимо текущего сервера, так что VPN продолжает
-  работать; при выключенном VPN Стрелка замеряет без него. На сервер уходит
+  работать; при выключенном VPN Astra замеряет без него. На сервер уходит
   до 25 МБ трафика — сколько всего, окно скажет до начала.
 - Проверка всех серверов: у каждого свои 5 секунд, по 16 разом, сверху вниз,
   и на экране видно, какая подписка проверяется и сколько в ней отвечает.
@@ -177,18 +177,18 @@ Windows не выпускает его мимо VPN, пока тот перез�
 
 Нужна Windows 10 или 11, 64 бит.
 
-1. Скачай `Strelka_<версия>_x64-setup.exe` со страницы
-   [выпусков](https://github.com/MadBl1ss/strelka-app/releases/latest).
+1. Скачай `Astra_<версия>_x64-setup.exe` со страницы
+   [выпусков](https://github.com/MadBl1ss/astra-app/releases/latest).
 2. Запусти его. Windows SmartScreen может сказать «Windows защитила ваш
-   компьютер»: у Стрелки пока нет подписи кода, поэтому издатель неизвестен.
+   компьютер»: у Astra пока нет подписи кода, поэтому издатель неизвестен.
    Нажми «Подробнее» → «Выполнить в любом случае».
 3. Согласись на запрос прав администратора — он нужен один раз, чтобы
    поставить службу.
 4. Откроется окно. Вставь ссылку на подписку (её даёт провайдер VPN) или на
    один сервер и нажми «Подключить».
 
-Стрелка ставится для всех пользователей компьютера: окно — в
-`C:\Program Files\Strelka`, служба `Strelka` запускается вместе с Windows.
+Astra ставится для всех пользователей компьютера: окно — в
+`C:\Program Files\Astra`, служба Astra запускается вместе с Windows.
 
 ### Обновление
 
@@ -203,11 +203,15 @@ Windows не выпускает его мимо VPN, пока тот перез�
   VPN включится сам, если был включён.
 - Подписки и настройки остаются на месте.
 
+До версии 0.1.x Astra называлась «Стрелка». Обновление переименует её
+само: старая папка, ярлык и запись в списке программ уйдут, подписки и
+настройки останутся.
+
 Можно и вручную: скачать свежий установщик и запустить поверх.
 
 ### Удаление
 
-«Параметры» → «Приложения» → «Установленные приложения» → «Стрелка» →
+«Параметры» → «Приложения» → «Установленные приложения» → «Astra» →
 «Удалить». Удаление останавливает службу, снимает фильтры замка и убирает
 службу. Галочка «Удалить данные приложения» стирает и
 `C:\ProgramData\Strelka` — подписки и ключи; без неё они остаются, и
@@ -215,13 +219,13 @@ Windows не выпускает его мимо VPN, пока тот перез�
 
 ## Приватность
 
-Стрелка не собирает телеметрию, не требует аккаунта и не показывает
+Astra не собирает телеметрию, не требует аккаунта и не показывает
 рекламу. Кроме самих серверов VPN, она обращается вот куда:
 
 | Куда | Зачем |
 | --- | --- |
 | Адрес подписки провайдера | Список серверов, остаток трафика и срок. Если панель ограничивает число устройств, вместе с запросом уходит HWID этого компьютера |
-| GitHub | Проверка новой версии Стрелки; свежие автосписки, их скачивает движок |
+| GitHub | Проверка новой версии Astra; свежие автосписки, их скачивает движок |
 | ip-api.com | Раз в сутки, мимо VPN: где этот компьютер, чтобы нарисовать луч на глобусе. Если выбрать город вручную в настройках, запросов нет |
 | Google, Cloudflare, Microsoft | Короткие проверки связи: отличить «нет интернета» от «сервер не отвечает» |
 
@@ -252,7 +256,7 @@ Windows не выпускает его мимо VPN, пока тот перез�
 - **Состояние приходит само.** Служба знает, когда упал движок или сменилась
   сеть, и сразу присылает окну новое состояние — окно ничего не опрашивает.
 - **Движки — отдельные процессы** в Job Object: умрёт служба — умрут и они,
-  сирот не остаётся. Так sing-box под GPL-3.0 не превращает код Стрелки в GPL,
+  сирот не остаётся. Так sing-box под GPL-3.0 не превращает код Astra в GPL,
   а движок можно обновить без пересборки.
 - **Конфиг собирается, а не правится**: из профиля, правил и шаблона, при
   каждом изменении заново.
@@ -281,7 +285,7 @@ Windows не выпускает его мимо VPN, пока тот перез�
 ```powershell
 cd app; pnpm install; cd ..
 .\scripts\build-installer.ps1
-# → app\src-tauri\target\release\bundle\nsis\Strelka_<версия>_x64-setup.exe
+# → app\src-tauri\target\release\bundle\nsis\Astra_<версия>_x64-setup.exe
 ```
 
 Скрипт собирает службу (`core/`), скачивает закреплённые версии движков с их
@@ -313,8 +317,8 @@ cd app; pnpm dev                               # окно в браузере н
 
 ## Благодарности и лицензии
 
-Стрелка распространяется под лицензией [MIT](LICENSE). Движки запускаются
-отдельными процессами без изменений и ставятся вместе со Стрелкой со своими
+Astra распространяется под лицензией [MIT](LICENSE). Движки запускаются
+отдельными процессами без изменений и ставятся вместе с Astra со своими
 лицензиями (в папке установки — `licenses\`, там же `SOURCES.txt` с адресами
 исходников именно тех версий, что внутри):
 
@@ -322,7 +326,7 @@ cd app; pnpm dev                               # окно в браузере н
   полный текст — `licenses\GPL-3.0.txt`;
 - [Xray-core](https://github.com/XTLS/Xray-core) — MPL-2.0.
 
-Ещё Стрелка опирается на:
+Ещё Astra опирается на:
 
 - [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) —
   списки заблокированных в России сайтов;
@@ -339,23 +343,23 @@ cd app; pnpm dev                               # окно в браузере н
 
 <a id="english"></a>
 
-# Strelka
+# Astra
 
 **A smart VPN for Windows: one click to connect, and it knows what to send through the VPN.**<br>
 Lists of blocked sites are built in — everything else goes direct, at full speed.
 
-[**Download**](https://github.com/MadBl1ss/strelka-app/releases/latest) · [Install](#install) · [How it works](#how-it-works) · [Build](#building-from-source) · [**Русский**](#стрелка)
+[**Download**](https://github.com/MadBl1ss/astra-app/releases/latest) · [Install](#install) · [How it works](#how-it-works) · [Build](#building-from-source) · [**Русский**](#astra)
 
 </div>
 
-*Strelka* is Russian for a railway switch: one stream of traffic splits onto
-two tracks, "through the VPN" and "direct". The interface is in Russian; the
+*Astra* is Latin for "the stars"; up to 0.1.x the app was called Strelka
+(Russian for a railway switch) and updates rename it by themselves. The interface is in Russian; the
 project targets users in Russia, where many sites are blocked or throttled
 while local banks and services refuse foreign IP addresses.
 
-## Why Strelka
+## Why Astra
 
-**Turn it on and forget it.** Strelka splits the traffic itself: what is
+**Turn it on and forget it.** Astra splits the traffic itself: what is
 blocked goes through the VPN, everything else goes direct, with no loss of
 speed. No routing rules, no geo files, no configs.
 
@@ -392,7 +396,7 @@ and no admin prompts.
 
 **Smooth, no reconnects**<br>
 Server, mode and rules change on the fly — the VPN does not restart. The
-network blinked — Strelka tells that from an outage and doesn't raise a
+network blinked — Astra tells that from an outage and doesn't raise a
 false alarm.
 
 </td>
@@ -441,7 +445,7 @@ ads, no telemetry.
 - **TUN**: all system traffic is captured, not only the programs that honour
   the system proxy.
 - **Kill switch** on the Windows Filtering Platform. While the VPN should be
-  up, only Strelka's engines and service may reach the network; the router,
+  up, only Astra's engines and service may reach the network; the router,
   printers and other home devices stay reachable.
 - **DNS and IPv6** go through the tunnel; IPv6 can be blocked instead if the
   server has none.
@@ -454,7 +458,7 @@ ads, no telemetry.
   without the window and before anyone signs in.
 - **Diagnoses**: server down, all servers down, no internet, no network,
   unstable connection, engine restarting — each with its own text and advice.
-- **Fallback server**: if the selected server stops answering, Strelka
+- **Fallback server**: if the selected server stops answering, Astra
   switches to the first working one among your favourites. Their order is
   set by dragging.
 - **Its own notifications** with action buttons. Keep only problems or turn
@@ -469,7 +473,7 @@ ads, no telemetry.
   and **XHTTP**), **Trojan**, **Shadowsocks**, **Hysteria2**.
 - The link a provider's bot makes for Happ, v2RayTun, Hiddify, INCY and
   other apps works too, and so does a short link to a subscription page with
-  "Add to …" buttons: Strelka finds the subscription behind them. A link
+  "Add to …" buttons: Astra finds the subscription behind them. A link
   Happ has encrypted cannot be read; ask the provider for a plain one.
 - Traffic left and subscription term, with a warning before they run out.
 - Ping, favourites, search by name, country and address.
@@ -479,12 +483,12 @@ ads, no telemetry.
   server with a couple of lucky answers scores modestly until it proves
   itself. Servers that have answered nearly always and evenly for several
   days are marked "stable"; the best three are cards above the list. While
-  the VPN works, Strelka quietly pings the favourites, the best and the
+  the VPN works, Astra quietly pings the favourites, the best and the
   least recently checked servers every 45 minutes to keep the scores fresh.
 - **Speed test**: three pings and a download of a few seconds through each
   chosen server in turn, with a speedometer and the fastest one named. The
   test goes past the server in use, so the VPN keeps working; with the VPN
-  off Strelka measures without it. A server costs up to 25 MB of traffic,
+  off Astra measures without it. A server costs up to 25 MB of traffic,
   and the window says how much in all before it starts.
 - Testing every server: each gets its own 5 seconds, 16 at a time, top to
   bottom, and the window shows which subscription is being tested and how
@@ -506,9 +510,9 @@ ads, no telemetry.
 
 Windows 10 or 11, 64-bit.
 
-1. Download `Strelka_<version>_x64-setup.exe` from the
-   [releases](https://github.com/MadBl1ss/strelka-app/releases/latest) page.
-2. Run it. Windows SmartScreen may say "Windows protected your PC": Strelka
+1. Download `Astra_<version>_x64-setup.exe` from the
+   [releases](https://github.com/MadBl1ss/astra-app/releases/latest) page.
+2. Run it. Windows SmartScreen may say "Windows protected your PC": Astra
    has no code signing certificate yet, so the publisher is unknown. Click
    "More info" → "Run anyway".
 3. Accept the administrator prompt — it is needed once, to install the
@@ -516,8 +520,8 @@ Windows 10 or 11, 64-bit.
 4. The window opens. Paste a subscription link (your VPN provider gives you
    one) or a single server link and press «Подключить» (Connect).
 
-Strelka is installed for all users: the window goes to
-`C:\Program Files\Strelka`, and the `Strelka` service starts with Windows.
+Astra is installed for all users: the window goes to
+`C:\Program Files\Astra`, and the Astra service starts with Windows.
 
 **Updates**: the window checks for a new version every few hours (or at once:
 Settings → О программе → «Проверить сейчас») and shows an
@@ -526,7 +530,7 @@ signature checked, and it runs; the VPN and the kill switch are off for about
 a minute while the service is updated and come back on by themselves.
 Subscriptions and settings stay.
 
-**Uninstall**: Settings → Apps → Installed apps → Стрелка → Uninstall. The
+**Uninstall**: Settings → Apps → Installed apps → Astra → Uninstall. The
 service is stopped, the kill switch filters are removed. The "Delete app
 data" box also wipes `C:\ProgramData\Strelka` — subscriptions and keys;
 without it they stay, and a reinstall picks them up.
@@ -534,12 +538,12 @@ without it they stay, and a reinstall picks them up.
 ## Privacy
 
 No telemetry, no account, no ads. Besides the VPN servers themselves,
-Strelka talks to:
+Astra talks to:
 
 | Where | Why |
 | --- | --- |
 | Your provider's subscription URL | The server list, traffic left and term. If the panel limits devices, this computer's HWID goes with the request |
-| GitHub | Checking for a new Strelka version; fresh auto-lists, downloaded by the engine |
+| GitHub | Checking for a new Astra version; fresh auto-lists, downloaded by the engine |
 | ip-api.com | Once a day, outside the VPN: where this computer is, to draw the beam on the globe. Pick a city by hand in Settings and there are no requests |
 | Google, Cloudflare, Microsoft | Short connectivity probes: telling "no internet" from "server not answering" |
 
@@ -571,7 +575,7 @@ Strelka talks to:
   dies or the network changes and sends the window the new state at once.
 - **Engines are separate processes** in a Job Object: if the service dies,
   they die with it, no orphans. This also keeps sing-box's GPL-3.0 from
-  extending to Strelka's code and lets an engine be updated without a
+  extending to Astra's code and lets an engine be updated without a
   rebuild.
 - **The config is generated, not edited**: from the profile, the rules and a
   template, anew on every change.
@@ -602,7 +606,7 @@ with the Visual Studio C++ build tools, Windows 10 or 11.
 ```powershell
 cd app; pnpm install; cd ..
 .\scripts\build-installer.ps1
-# → app\src-tauri\target\release\bundle\nsis\Strelka_<version>_x64-setup.exe
+# → app\src-tauri\target\release\bundle\nsis\Astra_<version>_x64-setup.exe
 ```
 
 The script builds the service (`core/`), downloads the pinned engine versions
@@ -635,8 +639,8 @@ needed.
 
 ## Credits and licenses
 
-Strelka is licensed under [MIT](LICENSE). The engines run as separate,
-unmodified processes and ship with Strelka under their own licenses (see
+Astra is licensed under [MIT](LICENSE). The engines run as separate,
+unmodified processes and ship with Astra under their own licenses (see
 `licenses\` in the install folder, with `SOURCES.txt` pointing at the source
 of exactly the versions inside):
 
@@ -644,7 +648,7 @@ of exactly the versions inside):
   text in `licenses\GPL-3.0.txt`;
 - [Xray-core](https://github.com/XTLS/Xray-core) — MPL-2.0.
 
-Strelka also relies on:
+Astra also relies on:
 
 - [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) —
   lists of sites blocked in Russia;

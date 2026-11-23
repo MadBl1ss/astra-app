@@ -38,7 +38,7 @@ const LABEL_OPEN: &str = "Открыть";
 const LABEL_TOGGLE: &str = "Включить VPN";
 const LABEL_SERVER: &str = "Сервер";
 const LABEL_QUIT: &str = "Выход";
-const TOOLTIP: &str = "Стрелка";
+const TOOLTIP: &str = "Astra";
 
 // Drawn by app/scripts/icons.mjs.
 const ICONS: &[(&str, &[u8])] = &[

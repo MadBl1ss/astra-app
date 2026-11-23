@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   The updater asks
-  https://github.com/MadBl1ss/strelka-app/releases/latest/download/latest.json
+  https://github.com/MadBl1ss/astra-app/releases/latest/download/latest.json
   (plugins.updater in app\src-tauri\tauri.conf.json) and gets the version,
   the notes, the date, and for Windows the address of the installer with its
   signature. The signature is the content of <installer>.sig, which the
@@ -18,9 +18,9 @@
   GitHub release v<version>. A test feed passes its own address.
 
 .EXAMPLE
-  .\scripts\make-latest-json.ps1 -Installer app\src-tauri\target\release\bundle\nsis\Strelka_0.1.0_x64-setup.exe
+  .\scripts\make-latest-json.ps1 -Installer app\src-tauri\target\release\bundle\nsis\Astra_0.1.0_x64-setup.exe
 .EXAMPLE
-  .\scripts\make-latest-json.ps1 -Installer .\Strelka_0.1.1_x64-setup.exe -BaseUrl http://127.0.0.1:8765 -Out .\feed\latest.json
+  .\scripts\make-latest-json.ps1 -Installer .\Astra_0.1.1_x64-setup.exe -BaseUrl http://127.0.0.1:8765 -Out .\feed\latest.json
 #>
 param(
     [Parameter(Mandatory)][string]$Installer,
@@ -43,7 +43,7 @@ if (-not $Version) {
     $Version = (Get-Content -Raw -Encoding UTF8 (Join-Path $root 'app\package.json') | ConvertFrom-Json).version
 }
 $name = Split-Path -Leaf $Installer
-if (-not $BaseUrl) { $BaseUrl = "https://github.com/MadBl1ss/strelka-app/releases/download/v$Version" }
+if (-not $BaseUrl) { $BaseUrl = "https://github.com/MadBl1ss/astra-app/releases/download/v$Version" }
 if (-not $Out) { $Out = Join-Path (Split-Path -Parent $Installer) 'latest.json' }
 
 # The notes of this version from CHANGELOG.md.
