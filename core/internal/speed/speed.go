@@ -19,8 +19,11 @@ import (
 // URLs are what a speed test downloads, in order of preference: big files
 // on networks that are fast everywhere. The next one is tried when one does
 // not answer at all.
+//
+// Cloudflare answers 403 to a request of 100 000 000 bytes or more (checked
+// 23.11.2026); 50 MB is still well past Default.Bytes.
 var URLs = []string{
-	"https://speed.cloudflare.com/__down?bytes=104857600",
+	"https://speed.cloudflare.com/__down?bytes=50000000",
 	"https://nbg1-speed.hetzner.com/100MB.bin",
 }
 
