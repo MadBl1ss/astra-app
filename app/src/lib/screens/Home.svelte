@@ -154,110 +154,114 @@
 </script>
 
 <div class="home" class:strip={strip !== null}>
-  {#if strip}
-    <Banner tone={strip.tone} title={strip.title} body={strip.body}>
-      {#snippet actions()}
-        {#each strip.actions as action, i (action.action)}
-          <Button variant={i === 0 ? 'default' : 'ghost'} onclick={() => run(action)}>{action.label}</Button>
-        {/each}
-      {/snippet}
-    </Banner>
-  {/if}
-
-  <section class="hero {picture.tone}">
+  <!-- The sky fills the whole pane, edge to edge; only the journal below
+       sits apart, on the ground of the window. -->
+  <div class="sky">
     <Starfield active={watched} />
 
-    <!-- The state is told above the globe, in the globe's own colours: the
-         word, the ball, its glow and the ring of the button read as one. -->
-    <header class="status">
-      <h1>{picture.word}</h1>
-      {#if picture.facts}
-        <p class="facts">
-          {#each picture.facts as fact, i (i)}<span>{fact}</span>{/each}
-        </p>
-      {:else}
-        <p title={picture.sub}>{picture.sub}</p>
-      {/if}
-    </header>
+    {#if strip}
+      <Banner tone={strip.tone} title={strip.title} body={strip.body}>
+        {#snippet actions()}
+          {#each strip.actions as action, i (action.action)}
+            <Button variant={i === 0 ? 'default' : 'ghost'} onclick={() => run(action)}>{action.label}</Button>
+          {/each}
+        {/snippet}
+      </Banner>
+    {/if}
 
-    <div class="side">
-      <Fork vpn={picture.vpnRail} direct={picture.directRail} gate={picture.gate} tone={picture.tone} {vpnStat} {directStat} />
-    </div>
+    <section class="hero {picture.tone}">
+      <!-- The state is told above the globe, in the globe's own colours: the
+           word, the ball, its glow and the ring of the button read as one. -->
+      <header class="status">
+        <h1>{picture.word}</h1>
+        {#if picture.facts}
+          <p class="facts">
+            {#each picture.facts as fact, i (i)}<span>{fact}</span>{/each}
+          </p>
+        {:else}
+          <p title={picture.sub}>{picture.sub}</p>
+        {/if}
+      </header>
 
-    <div class="stage">
-      <div class="disc">
-        <Globe
-          tone={picture.tone}
-          beam={picture.vpnRail}
-          from={here}
-          to={there}
-          rate={vpnPath ? vpnPath.down + vpnPath.up : null}
-          active={watched}
-        />
-        <div class="power">
-          <Hint text={picture.wantOn ? t.state.powerOff : t.state.powerOn}>
-            {#snippet children(describedby)}
-              <button
-                type="button"
-                role="switch"
-                class="knob {picture.tone}"
-                aria-checked={picture.wantOn}
-                aria-label={t.state.switchLabel}
-                aria-describedby={describedby}
-                onclick={() => daemon.toggleVpn()}
-              >
-                <Icon name="power" size={26} />
-              </button>
-            {/snippet}
-          </Hint>
+      <div class="side">
+        <Fork vpn={picture.vpnRail} direct={picture.directRail} gate={picture.gate} tone={picture.tone} {vpnStat} {directStat} />
+      </div>
+
+      <div class="stage">
+        <div class="disc">
+          <Globe
+            tone={picture.tone}
+            beam={picture.vpnRail}
+            from={here}
+            to={there}
+            rate={vpnPath ? vpnPath.down + vpnPath.up : null}
+            active={watched}
+          />
+          <div class="power">
+            <Hint text={picture.wantOn ? t.state.powerOff : t.state.powerOn}>
+              {#snippet children(describedby)}
+                <button
+                  type="button"
+                  role="switch"
+                  class="knob {picture.tone}"
+                  aria-checked={picture.wantOn}
+                  aria-label={t.state.switchLabel}
+                  aria-describedby={describedby}
+                  onclick={() => daemon.toggleVpn()}
+                >
+                  <Icon name="power" size={26} />
+                </button>
+              {/snippet}
+            </Hint>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="side quick">
-      <div class="group">
-        <h3>{t.quick.server}</h3>
-        <Select
-          items={serverItems}
-          value={s.server.selected}
-          label={t.quick.server}
-          placeholder={s.servers.length === 0 ? t.quick.serverEmpty : t.quick.serverPick}
-          disabled={s.servers.length === 0}
-          onchange={(id) => daemon.selectServer(id)}
-        />
-      </div>
+      <div class="side quick">
+        <div class="group">
+          <h3>{t.quick.server}</h3>
+          <Select
+            items={serverItems}
+            value={s.server.selected}
+            label={t.quick.server}
+            placeholder={s.servers.length === 0 ? t.quick.serverEmpty : t.quick.serverPick}
+            disabled={s.servers.length === 0}
+            onchange={(id) => daemon.selectServer(id)}
+          />
+        </div>
 
-      <div class="group">
-        <h3>
-          {t.quick.mode}
-          <button type="button" class="about" aria-label={t.quick.modeAbout} title={t.quick.modeAbout} onclick={() => (aboutMode = true)}>
-            <Icon name="info" size={14} />
-          </button>
-        </h3>
-        <Segments options={modes} value={s.vpn.mode} label={t.quick.mode} onchange={(mode) => daemon.setMode(mode)} />
-      </div>
+        <div class="group">
+          <h3>
+            {t.quick.mode}
+            <button type="button" class="about" aria-label={t.quick.modeAbout} title={t.quick.modeAbout} onclick={() => (aboutMode = true)}>
+              <Icon name="info" size={14} />
+            </button>
+          </h3>
+          <Segments options={modes} value={s.vpn.mode} label={t.quick.mode} onchange={(mode) => daemon.setMode(mode)} />
+        </div>
 
-      <div class="group">
-        <h3>{t.quick.guard}</h3>
-        <div class="lock {guard}">
-          <Icon name={s.guard.enabled ? 'lock' : 'unlock'} size={16} />
-          <span class="grow">{guardText}</span>
-          <Hint text={guard === 'not_ready' ? t.quick.guardNotReadyHint : t.quick.guardHint}>
-            {#snippet children(describedby)}
-              <span aria-describedby={describedby}>
-                <Switch
-                  size="sm"
-                  checked={s.guard.enabled}
-                  label={t.quick.guardSwitch}
-                  onchange={(on) => daemon.setGuard(on)}
-                />
-              </span>
-            {/snippet}
-          </Hint>
+        <div class="group">
+          <h3>{t.quick.guard}</h3>
+          <div class="lock {guard}">
+            <Icon name={s.guard.enabled ? 'lock' : 'unlock'} size={16} />
+            <span class="grow">{guardText}</span>
+            <Hint text={guard === 'not_ready' ? t.quick.guardNotReadyHint : t.quick.guardHint}>
+              {#snippet children(describedby)}
+                <span aria-describedby={describedby}>
+                  <Switch
+                    size="sm"
+                    checked={s.guard.enabled}
+                    label={t.quick.guardSwitch}
+                    onchange={(on) => daemon.setGuard(on)}
+                  />
+                </span>
+              {/snippet}
+            </Hint>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 
   <section class="log">
     <h2>
@@ -294,8 +298,25 @@
   .home {
     display: flex;
     flex-direction: column;
-    gap: var(--s4);
     min-height: 100%;
+  }
+
+  /* The night is the whole pane, edge to edge, with nothing framing it.
+     Its padding is the one the other screens get from <main>. */
+  .sky {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s4);
+    padding: 22px 26px var(--s4);
+    background: var(--sky);
+  }
+
+  .sky > :global(canvas) {
+    z-index: -1;
   }
 
   .grow {
@@ -330,9 +351,6 @@
     --globe: clamp(200px, min(100vh - 330px, 100vw - 580px), 380px);
     --a: var(--globe-off-a);
     --b: var(--globe-off-b);
-    position: relative;
-    isolation: isolate;
-    overflow: hidden;
     flex: 1;
     display: grid;
     grid-template-columns: minmax(150px, 1fr) var(--globe) minmax(220px, 1fr);
@@ -340,10 +358,6 @@
     align-items: center;
     gap: 0 var(--s4);
     min-height: 280px;
-    padding: var(--s4) var(--s4) var(--s3);
-    border: 1px solid var(--line);
-    border-radius: var(--r-card);
-    background: var(--sky);
     transition:
       --a 350ms ease,
       --b 350ms ease;
@@ -367,10 +381,6 @@
 
   .strip .hero {
     --globe: clamp(200px, min(100vh - 392px, 100vw - 580px), 380px);
-  }
-
-  .hero > :global(canvas) {
-    z-index: -1;
   }
 
   .status {
@@ -574,8 +584,14 @@
   /* The smallest window (820x560) with an incident strip: everything still
      fits without scrolling if the journal gives up its third line. */
   @media (max-height: 620px) {
-    .home {
+    .sky {
       gap: var(--s3);
+      padding-top: 14px;
+      padding-bottom: var(--s3);
+    }
+
+    .log {
+      padding-bottom: 10px;
     }
 
     .strip .log :global(li:nth-child(n + 3)) {
@@ -604,8 +620,12 @@
     color: var(--warn);
   }
 
+  /* The journal is the ground under the sky: the window's own colour,
+     a hairline between them. */
   .log {
-    margin-top: auto;
+    padding: var(--s3) 26px 14px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
   }
 
   h2 {
