@@ -1,7 +1,7 @@
 [package]
-name = "strelka"
+name = "astra"
 version = "0.1.0"
-description = "Strelka: the window and the tray icon of the VPN client"
+description = "Astra: the window and the tray icon of the VPN client"
 license = "MIT"
 edition = "2021"
 rust-version = "1.90"

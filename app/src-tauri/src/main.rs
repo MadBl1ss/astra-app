@@ -89,5 +89,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("failed to start the Strelka window");
+        .expect("failed to start the Astra window");
 }

@@ -26,7 +26,7 @@ const version = "0.1.0"
 func main() { os.Exit(realMain(os.Args[1:])) }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `Консольный клиент службы Стрелки.
+	fmt.Fprint(os.Stderr, `Консольный клиент службы Astra.
 
   strelkactl [--pipe ИМЯ] команда
 
@@ -137,7 +137,7 @@ func realMain(args []string) int {
 		return fail(err)
 	}
 	if hello.Proto != proto.Version {
-		fmt.Fprintf(os.Stderr, "Внимание: у службы протокол %d, у strelkactl — %d. Обнови Стрелку.\n", hello.Proto, proto.Version)
+		fmt.Fprintf(os.Stderr, "Внимание: у службы протокол %d, у strelkactl — %d. Обнови Astra.\n", hello.Proto, proto.Version)
 	}
 
 	switch cmd {

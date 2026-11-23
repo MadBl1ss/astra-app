@@ -265,7 +265,7 @@ func buildReport(in reportInput, now time.Time) (string, error) {
 }
 
 // reportReadme is for whoever opens the archive, the user first of all.
-const reportReadme = `Отчёт Стрелки для поддержки.
+const reportReadme = `Отчёт Astra для поддержки.
 
 Внутри: состояние VPN, журнал событий, логи движков и их настройки.
 Ключи и пароли серверов, ссылки подписок и идентификатор устройства

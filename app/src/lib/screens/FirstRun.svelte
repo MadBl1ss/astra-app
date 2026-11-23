@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from '../components/Button.svelte';
   import Field from '../components/Field.svelte';
-  import Icon from '../components/Icon.svelte';
+  import Mark from '../components/Mark.svelte';
   import { ru } from '../i18n/ru';
   import type { LegacyFolder, LegacyImportResult } from '../proto';
   import { oldTrayAutostart, oldTrayAutostartOff } from '../shell/oldtray';
@@ -152,7 +152,7 @@
 
 <div class="first">
   <div class="col">
-    <span class="mark" aria-hidden="true"><Icon name="shield" size={28} /></span>
+    <span class="mark" aria-hidden="true"><Mark size={30} /></span>
     <h1>{t.title}</h1>
 
     {#if found.length > 0 && !imported}

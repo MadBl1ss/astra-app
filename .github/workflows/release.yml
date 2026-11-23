@@ -68,8 +68,8 @@ jobs:
         run: |
           $v = (Get-Content -Raw app/package.json | ConvertFrom-Json).version
           $dir = 'app/src-tauri/target/release/bundle/nsis'
-          $setup = "$dir/Strelka_${v}_x64-setup.exe"
+          $setup = "$dir/Astra_${v}_x64-setup.exe"
           $notes = (Get-Content -Raw "$dir/latest.json" | ConvertFrom-Json).notes
           $body = Join-Path $env:RUNNER_TEMP 'notes.md'
-          Set-Content -Encoding utf8 -Path $body -Value "$notes`n`nУстановка и удаление — в README. Windows SmartScreen предупредит о неизвестном издателе: у Стрелки пока нет подписи кода."
-          gh release create "v$v" --draft --target $env:GITHUB_SHA --title "Стрелка $v" --notes-file $body $setup "$setup.sig" "$dir/latest.json"
+          Set-Content -Encoding utf8 -Path $body -Value "$notes`n`nУстановка и удаление — в README. Windows SmartScreen предупредит о неизвестном издателе: у Astra пока нет подписи кода."
+          gh release create "v$v" --draft --target $env:GITHUB_SHA --title "Astra $v" --notes-file $body $setup "$setup.sig" "$dir/latest.json"

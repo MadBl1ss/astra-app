@@ -32,7 +32,7 @@ func guardCmd(args []string) int {
 			fmt.Fprintf(os.Stderr, "Фильтры не убраны: %v\n", guardWhy(err))
 			return 1
 		}
-		fmt.Printf("Фильтров Стрелки убрано: %d.\n", n)
+		fmt.Printf("Фильтров Astra убрано: %d.\n", n)
 		return 0
 	}
 	fmt.Fprintf(os.Stderr, "Неизвестная команда «guard %s».\n\n", args[0])
@@ -116,6 +116,6 @@ func guardTest(args []string) int {
 		say("ПОСЛЕ СНЯТИЯ ОСТАВАЛОСЬ ФИЛЬТРОВ: %d — убраны", left)
 		return 1
 	}
-	say("фильтров Стрелки не осталось")
+	say("фильтров Astra не осталось")
 	return 0
 }

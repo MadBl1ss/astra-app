@@ -23,8 +23,8 @@ import (
 
 const (
 	serviceName    = "Strelka"
-	serviceDisplay = "Стрелка"
-	serviceDesc    = "VPN Стрелки: держит sing-box и Xray, замок и диагнозы. Окно и значок в трее говорят с ней по каналу strelka."
+	serviceDisplay = "Astra"
+	serviceDesc    = "VPN Astra: держит sing-box и Xray, замок и диагнозы. Окно и значок в трее говорят с ней по каналу strelka."
 )
 
 // Power broadcast event types (PBT_*) that arrive with svc.PowerEvent.
@@ -286,14 +286,14 @@ func serviceInstall(args []string) int {
 			fmt.Fprintf(os.Stderr, "Служба не обновилась: %v\n", err)
 			return 1
 		}
-		fmt.Println("Служба Strelka обновлена.")
+		fmt.Println("Служба Astra обновлена.")
 	} else {
 		s, err = m.CreateService(serviceName, exe, conf, runArgs...)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Служба не создалась: %v\n", err)
 			return 1
 		}
-		fmt.Println("Служба Strelka создана.")
+		fmt.Println("Служба Astra создана.")
 	}
 	defer s.Close()
 
@@ -366,7 +366,7 @@ func serviceUninstall() int {
 		fmt.Fprintf(os.Stderr, "Служба не удалилась: %v\n", err)
 		return 1
 	}
-	fmt.Println("Служба Strelka удалена. Данные остались на месте.")
+	fmt.Println("Служба Astra удалена. Данные остались на месте.")
 	return 0
 }
 
@@ -378,7 +378,7 @@ func serviceStart() int {
 	defer m.Disconnect()
 	s, err := m.OpenService(serviceName)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Службы Strelka нет: сначала strelkad service install.")
+		fmt.Fprintln(os.Stderr, "Службы Astra нет: сначала strelkad service install.")
 		return 1
 	}
 	defer s.Close()
@@ -391,7 +391,7 @@ func serviceStart() int {
 		fmt.Fprintf(os.Stderr, "Служба не запустилась: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Служба Strelka запущена (PID %d).\n", st.ProcessId)
+	fmt.Printf("Служба Astra запущена (PID %d).\n", st.ProcessId)
 	return 0
 }
 
@@ -436,7 +436,7 @@ func stopAndWait(s *mgr.Service) int {
 			windows.CloseHandle(h)
 		}
 	}
-	fmt.Println("Служба Strelka остановлена.")
+	fmt.Println("Служба Astra остановлена.")
 	return 0
 }
 
@@ -485,7 +485,7 @@ func serviceStatus() int {
 		svc.Stopped: "остановлена", svc.StartPending: "запускается", svc.StopPending: "останавливается",
 		svc.Running: "работает", svc.ContinuePending: "продолжается", svc.PausePending: "приостанавливается", svc.Paused: "приостановлена",
 	}
-	fmt.Printf("Служба Strelka: %s", names[st.State])
+	fmt.Printf("Служба Astra: %s", names[st.State])
 	if st.ProcessId != 0 {
 		fmt.Printf(", PID %d", st.ProcessId)
 	}

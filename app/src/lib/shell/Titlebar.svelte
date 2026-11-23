@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
+  import Mark from '../components/Mark.svelte';
   import { ru } from '../i18n/ru';
   import { inWindow } from '../transport';
 
@@ -15,7 +16,7 @@
 
 <header class="titlebar" data-tauri-drag-region>
   <span class="brand" data-tauri-drag-region>
-    <Icon name="shield" size={14} />
+    <Mark size={16} />
     <span class="name" data-tauri-drag-region>{ru.app.name}</span>
   </span>
   <span class="grow" data-tauri-drag-region></span>
@@ -45,6 +46,7 @@
     display: flex;
     align-items: center;
     gap: var(--s2);
+    color: var(--text);
     /* The icon must not swallow the drag. */
     pointer-events: none;
   }
